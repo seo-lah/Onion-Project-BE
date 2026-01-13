@@ -6,6 +6,7 @@ import re
 import time
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 from collections import Counter
@@ -35,6 +36,14 @@ diary_collection = db["diaries"]
 user_collection = db["users"]
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],      # 모든 곳에서 접속 허용 (가장 중요!)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class DiaryRequest(BaseModel):
     user_id: str
