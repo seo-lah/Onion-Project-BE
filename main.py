@@ -54,20 +54,20 @@ app.add_middleware(
 class DiaryRequest(BaseModel):
     user_id: str
     content: str
-    # 임시저장일 땐 아래 정보가 없을 수도 있으므로 Optional 처리
+    title: Optional[str] = None      # [NEW] 제목 추가 (없으면 None)
     entry_date: Optional[str] = None 
     mood: Optional[str] = None       
     weather: Optional[str] = None    
     tags: List[str] = []             
     image_url: Optional[str] = None 
     
-    # [NEW] 임시저장 관련 필드
-    is_temporary: bool = False       # True면 임시저장(분석X), False면 제출(분석O)
-    diary_id: Optional[str] = None   # 기존 임시저장된 글을 이어서 쓸 때 ID를 보냄
+    is_temporary: bool = False       
+    diary_id: Optional[str] = None
 
 # 2. 일기 수정 요청 (모든 필드 수정 가능하도록 변경)
 class DiaryUpdateRequest(BaseModel):
     user_id: str
+    title: Optional[str] = None      # [NEW] 제목 수정 가능
     content: Optional[str] = None
     entry_date: Optional[str] = None
     mood: Optional[str] = None
@@ -125,7 +125,6 @@ def update_big5_scores(old_scores, new_scores, alpha=0.2):
 
 # --- [Gemini] 분석 함수 ---
 async def get_gemini_analysis(diary_text: str, user_traits: List[str], retries=2):
-    # (프롬프트는 너무 길어서 생략했습니다. 기존에 쓰시던 긴 프롬프트를 여기에 꼭 그대로 붙여넣으세요!)
     # !!! 중요: 여기에 system_instruction 내용이 반드시 있어야 합니다 !!!
     system_instruction = """
         Role Definition: You are "Onion," an empathetic and insightful AI psychological analyst. Your goal is to peel back the layers of the user's conscious thoughts to reveal their subconscious patterns, core beliefs (schemas), and emotional triggers. You provide analysis based on Cognitive Behavioral Therapy (CBT) and Schema Therapy principles. You use a warm, polite, and professional tone (Korean honorifics, 존댓말).
@@ -206,9 +205,8 @@ Output Generation: (Return the JSON structure in Korean based on this reasoning)
             if attempt < retries: time.sleep(1)
     return None
 
-# --- [NEW] 장기 분석 함수 ---
+# --- 장기 분석 함수 ---
 async def get_long_term_analysis(diary_history: str, data_count: int):
-    # (이전 코드와 동일, 생략 없이 그대로 두세요)
     analysis_focus = "Focus on Deep Patterns."
     if data_count < 10: analysis_focus = "Focus on short-term changes."
     
@@ -227,7 +225,7 @@ async def get_long_term_analysis(diary_history: str, data_count: int):
 # API 엔드포인트
 # =========================================================
 
-# --- [API 1] 일기 작성 및 저장 (임시저장 로직 추가됨) ---
+# --- [API 1] 일기 작성 및 저장 ---
 @app.post("/analyze-and-save")
 async def analyze_and_save(request: DiaryRequest):
     try:
@@ -239,17 +237,17 @@ async def analyze_and_save(request: DiaryRequest):
             
             draft_data = {
                 "user_id": request.user_id,
+                "title": request.title,        # [NEW] 제목 저장
                 "content": request.content,
                 "entry_date": request.entry_date, 
                 "mood": request.mood,
                 "weather": request.weather,
                 "tags": request.tags,
                 "image_url": request.image_url,
-                "is_temporary": True,              # 임시저장 플래그 설정
+                "is_temporary": True,
                 "updated_at": datetime.utcnow()
             }
             
-            # A. 기존 임시저장 글을 수정하는 경우 (diary_id가 있음)
             if request.diary_id and ObjectId.is_valid(request.diary_id):
                 result = diary_collection.update_one(
                     {"_id": ObjectId(request.diary_id), "user_id": request.user_id},
@@ -258,8 +256,6 @@ async def analyze_and_save(request: DiaryRequest):
                 if result.matched_count == 0:
                     raise HTTPException(status_code=404, detail="Draft not found")
                 saved_id = request.diary_id
-                
-            # B. 새로운 임시저장 글을 만드는 경우
             else:
                 draft_data["created_at"] = datetime.utcnow()
                 result = diary_collection.insert_one(draft_data)
@@ -276,7 +272,6 @@ async def analyze_and_save(request: DiaryRequest):
         # [CASE 2] 최종 제출 및 분석 (is_temporary == False)
         # -------------------------------------------------------------
         
-        # [검증] 최종 제출 시에는 필수 항목이 다 있어야 함!
         if not request.mood or not request.weather or not request.entry_date:
             raise HTTPException(status_code=400, detail="날짜, 기분, 날씨는 필수 입력 사항입니다.")
 
@@ -319,16 +314,17 @@ async def analyze_and_save(request: DiaryRequest):
         new_big5 = analysis_result.get("big5") or {}
         updated_big5 = update_big5_scores(existing_big5, new_big5)
 
-        # 4. DB 저장 (Insert or Update)
+        # 4. DB 저장
         final_data = {
             "user_id": request.user_id,
+            "title": request.title,               # [NEW] 제목 저장
             "content": request.content,
             "entry_date": request.entry_date,
             "mood": request.mood,
             "weather": request.weather,
             "tags": request.tags,
             "image_url": request.image_url,
-            "is_temporary": False,                # [중요] 임시저장 해제
+            "is_temporary": False,
             "analysis": analysis_result.get("analysis"),
             "recommend": analysis_result.get("recommend"),
             "one_liner": analysis_result.get("one_liner"),
@@ -337,15 +333,12 @@ async def analyze_and_save(request: DiaryRequest):
             "updated_at": datetime.utcnow()
         }
 
-        # A. 임시저장했던 글을 완성하는 경우 (Update)
         if request.diary_id and ObjectId.is_valid(request.diary_id):
             diary_collection.update_one(
                 {"_id": ObjectId(request.diary_id), "user_id": request.user_id},
                 {"$set": final_data}
             )
             saved_id = request.diary_id
-            
-        # B. 처음부터 바로 제출하는 경우 (Insert)
         else:
             final_data["created_at"] = datetime.utcnow()
             result = diary_collection.insert_one(final_data)
@@ -376,7 +369,7 @@ async def analyze_and_save(request: DiaryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# --- [API 2] 일기 수정 (태그 통계 보정 기능 포함) ---
+# --- [API 2] 일기 수정 ---
 @app.patch("/diaries/{diary_id}")
 async def update_diary_content(diary_id: str, request: DiaryUpdateRequest):
     try:
@@ -389,13 +382,13 @@ async def update_diary_content(diary_id: str, request: DiaryUpdateRequest):
 
         update_fields = {"updated_at": datetime.utcnow()}
         
+        if request.title is not None: update_fields["title"] = request.title # [NEW] 제목 수정
         if request.content is not None: update_fields["content"] = request.content
         if request.entry_date is not None: update_fields["entry_date"] = request.entry_date
         if request.mood is not None: update_fields["mood"] = request.mood
         if request.weather is not None: update_fields["weather"] = request.weather
         if request.image_url is not None: update_fields["image_url"] = request.image_url
         
-        # [NEW] 태그 변경 시 통계 보정
         if request.tags is not None:
             old_tags = old_diary.get("tags", [])
             new_tags = request.tags
