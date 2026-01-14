@@ -222,16 +222,67 @@ async def get_long_term_analysis(diary_history: str, data_count: int):
 # API 엔드포인트
 # =========================================================
 
-# --- [API 1] 일기 작성 및 분석 (업그레이드 버전) ---
+# --- [API 1] 일기 작성 및 저장 (임시저장 로직 추가됨) ---
 @app.post("/analyze-and-save")
 async def analyze_and_save(request: DiaryRequest):
     try:
+        # -------------------------------------------------------------
+        # [CASE 1] 임시 저장 (is_temporary == True)
+        # -------------------------------------------------------------
+        if request.is_temporary:
+            print(f"INFO: Saving DRAFT for user_id: {request.user_id}")
+            
+            draft_data = {
+                "user_id": request.user_id,
+                "content": request.content,
+                "entry_date": request.entry_date, 
+                "mood": request.mood,
+                "weather": request.weather,
+                "tags": request.tags,
+                "image_url": request.image_url,
+                "is_temporary": True,              # 임시저장 플래그 설정
+                "updated_at": datetime.utcnow()
+            }
+            
+            # A. 기존 임시저장 글을 수정하는 경우 (diary_id가 있음)
+            if request.diary_id and ObjectId.is_valid(request.diary_id):
+                result = diary_collection.update_one(
+                    {"_id": ObjectId(request.diary_id), "user_id": request.user_id},
+                    {"$set": draft_data}
+                )
+                if result.matched_count == 0:
+                    raise HTTPException(status_code=404, detail="Draft not found")
+                saved_id = request.diary_id
+                
+            # B. 새로운 임시저장 글을 만드는 경우
+            else:
+                draft_data["created_at"] = datetime.utcnow()
+                result = diary_collection.insert_one(draft_data)
+                saved_id = str(result.inserted_id)
+
+            return {
+                "status": "draft_saved",
+                "message": "임시 저장되었습니다.",
+                "diary_id": saved_id,
+                "is_temporary": True
+            }
+
+        # -------------------------------------------------------------
+        # [CASE 2] 최종 제출 및 분석 (is_temporary == False)
+        # -------------------------------------------------------------
+        
+        # [검증] 최종 제출 시에는 필수 항목이 다 있어야 함!
+        if not request.mood or not request.weather or not request.entry_date:
+            raise HTTPException(status_code=400, detail="날짜, 기분, 날씨는 필수 입력 사항입니다.")
+
+        print(f"INFO: Finalizing & Analyzing diary for user_id: {request.user_id}")
+
         # 1. 유저 프로필 로드
         user_profile = user_collection.find_one({"user_id": request.user_id})
         
         if user_profile:
             existing_ai_counts = user_profile.get("trait_counts") or {}
-            existing_user_tags = user_profile.get("user_tag_counts") or {} # [NEW] 유저 태그 통계
+            existing_user_tags = user_profile.get("user_tag_counts") or {}
             existing_big5 = user_profile.get("big5_scores") or {}
             existing_traits_list = list(existing_ai_counts.keys())
         else:
@@ -239,7 +290,6 @@ async def analyze_and_save(request: DiaryRequest):
             existing_user_tags = {}
             existing_big5 = get_default_big5()
             existing_traits_list = []
-            
             user_collection.insert_one({
                 "user_id": request.user_id,
                 "joined_at": datetime.utcnow(),
@@ -254,51 +304,67 @@ async def analyze_and_save(request: DiaryRequest):
              raise HTTPException(status_code=500, detail="AI Analysis Failed")
 
         # 3. 데이터 가공
-        # (1) AI 키워드 업데이트
         new_ai_keywords = analysis_result.get("keywords") or []
         ai_counter = Counter(existing_ai_counts)
         ai_counter.update(new_ai_keywords)
         
-        # (2) [NEW] 사용자 태그 업데이트
         user_tag_counter = Counter(existing_user_tags)
         user_tag_counter.update(request.tags) 
 
-        # (3) Big5 업데이트
         new_big5 = analysis_result.get("big5") or {}
         updated_big5 = update_big5_scores(existing_big5, new_big5)
 
-        # 4. DB 저장
-        # (1) 일기 저장 (새 필드 모두 포함)
-        diary_collection.insert_one({
+        # 4. DB 저장 (Insert or Update)
+        final_data = {
             "user_id": request.user_id,
             "content": request.content,
-            "entry_date": request.entry_date, # [NEW]
-            "mood": request.mood,             # [NEW]
-            "weather": request.weather,       # [NEW]
-            "tags": request.tags,             # [NEW]
-            "image_url": request.image_url,   # [NEW]
-            "created_at": datetime.utcnow(),
+            "entry_date": request.entry_date,
+            "mood": request.mood,
+            "weather": request.weather,
+            "tags": request.tags,
+            "image_url": request.image_url,
+            "is_temporary": False,                # [중요] 임시저장 해제
             "analysis": analysis_result.get("analysis"),
             "recommend": analysis_result.get("recommend"),
             "one_liner": analysis_result.get("one_liner"),
             "big5_snapshot": new_big5,
-            "keywords_snapshot": new_ai_keywords
-        })
+            "keywords_snapshot": new_ai_keywords,
+            "updated_at": datetime.utcnow()
+        }
 
-        # (2) 유저 프로필 업데이트
+        # A. 임시저장했던 글을 완성하는 경우 (Update)
+        if request.diary_id and ObjectId.is_valid(request.diary_id):
+            diary_collection.update_one(
+                {"_id": ObjectId(request.diary_id), "user_id": request.user_id},
+                {"$set": final_data}
+            )
+            saved_id = request.diary_id
+            
+        # B. 처음부터 바로 제출하는 경우 (Insert)
+        else:
+            final_data["created_at"] = datetime.utcnow()
+            result = diary_collection.insert_one(final_data)
+            saved_id = str(result.inserted_id)
+
+        # 5. 유저 프로필 업데이트
         user_collection.update_one(
             {"user_id": request.user_id},
             {
                 "$set": {
                     "trait_counts": dict(ai_counter),
-                    "user_tag_counts": dict(user_tag_counter), # [NEW]
+                    "user_tag_counts": dict(user_tag_counter),
                     "big5_scores": updated_big5,
                     "last_updated": datetime.utcnow()
                 }
             }
         )
 
-        return {"status": "success", "analysis": analysis_result}
+        return {
+            "status": "success", 
+            "message": "분석 및 저장이 완료되었습니다.",
+            "diary_id": saved_id,
+            "analysis": analysis_result
+        }
 
     except Exception as e:
         print(f"Error: {e}")
@@ -419,5 +485,16 @@ async def get_user_diaries(user_id: str):
     diaries = []
     for doc in cursor:
         doc["_id"] = str(doc["_id"])
+        diaries.append(doc)
+    return {"diaries": diaries}
+
+# --- [API 6] 일기 목록 조회 (임시저장 여부 표시) ---
+@app.get("/diaries/{user_id}")
+async def get_user_diaries(user_id: str):
+    cursor = diary_collection.find({"user_id": user_id}).sort("entry_date", -1)
+    diaries = []
+    for doc in cursor:
+        doc["_id"] = str(doc["_id"])
+        # 프론트엔드에서 is_temporary 필드를 보고 "작성 중" 표시를 할 수 있음
         diaries.append(doc)
     return {"diaries": diaries}
