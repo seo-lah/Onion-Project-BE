@@ -162,7 +162,8 @@ async def get_gemini_analysis(diary_text: str, user_traits: List[str], retries=2
         {
         "analysis": {
             "theme1": "String",
-            "theme2": "String",
+            "theme2_title": "String",  // <--- [NEW] Theme 2의 제목 (한 문장 요약)
+            "theme2": "String",        // Theme 2의 상세 내용
             "theme3": "String",
             "theme4": "String",
             "theme5": "String"
