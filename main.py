@@ -260,6 +260,53 @@ def update_user_stats_bg(user_id: str, new_keywords: List[str], new_tags: List[s
     except Exception as e:
         print(f"ERROR: [Background] Failed to update stats: {e}")
 
+# --- 기분 통계 계산 헬퍼 함수 ---
+def calculate_mood_statistics(user_id: str):
+    # 1. 임시저장이 아닌(is_temporary=False) 일기의 날짜와 기분만 가져옴
+    cursor = diary_collection.find(
+        {"user_id": user_id, "is_temporary": False},
+        {"entry_date": 1, "mood": 1, "_id": 0}
+    )
+
+    stats = {
+        "week": Counter(),  # 최근 7일
+        "month": Counter(), # 최근 30일
+        "all": Counter()    # 전체 기간
+    }
+
+    # 현재 날짜 (시간은 버리고 날짜만 비교)
+    today = datetime.utcnow().date()
+
+    for doc in cursor:
+        mood = doc.get("mood")
+        date_str = doc.get("entry_date") # YYYY-MM-DD 형식
+
+        if not mood or not date_str:
+            continue
+
+        try:
+            # 문자열("2024-01-16") -> 날짜 객체로 변환
+            entry_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            
+            # 며칠 전인지 계산 (오늘 - 일기날짜)
+            days_diff = (today - entry_date).days
+
+            # 1. 전체 기간 카운트
+            stats["all"][mood] += 1
+
+            # 2. 최근 30일 (0일~30일 전)
+            if 0 <= days_diff <= 30:
+                stats["month"][mood] += 1
+
+            # 3. 최근 7일 (0일~7일 전)
+            if 0 <= days_diff <= 7:
+                stats["week"][mood] += 1
+                
+        except ValueError:
+            continue # 날짜 형식이 이상하면 무시
+
+    # Counter 객체를 dict로 변환해서 리턴
+    return {k: dict(v) for k, v in stats.items()}
 
 # =========================================================
 # API 엔드포인트
@@ -441,7 +488,11 @@ async def update_diary_content(diary_id: str, request: DiaryUpdateRequest):
 async def get_user_stats(user_id: str):
     user_profile = user_collection.find_one({"user_id": user_id})
     if not user_profile:
-        return {"user_id": user_id, "message": "New User"}
+        return {
+            "user_id": user_id, 
+            "message": "New User",
+            "mood_stats": {"week": {}, "month": {}, "all": {}} # 빈 통계 리턴
+        }
 
     joined_at = user_profile.get("joined_at")
     service_days = 0
@@ -449,13 +500,18 @@ async def get_user_stats(user_id: str):
         if isinstance(joined_at, str): joined_at = datetime.fromisoformat(joined_at)
         service_days = (datetime.utcnow() - joined_at).days + 1
 
+    # 기분 통계 계산 함수 호출
+    mood_stats = calculate_mood_statistics(user_id)
+
     user_profile["_id"] = str(user_profile["_id"])
+
     return {
         "user_id": user_profile["user_id"],
         "big5_scores": user_profile.get("big5_scores", get_default_big5()),
         "ai_trait_counts": user_profile.get("trait_counts", {}),
         "user_tag_counts": user_profile.get("user_tag_counts", {}),
-        "service_days": service_days
+        "service_days": service_days,
+        "mood_stats": mood_stats
     }
 
 # --- [API 4] 인생 지도 분석 ---
