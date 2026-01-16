@@ -790,17 +790,27 @@ async def get_user_diaries(user_id: str):
     return {"diaries": diaries}
 
 # --- [API 9] 프로필 이미지 ---
-@app.put("/user/profile-image")
+@app.put("/user/profile-image") # 1. PUT으로 변경됨
 async def update_profile_image(request: UserProfileImageRequest):
     try:
-        user_collection.update_one({"user_id": request.user_id}, {"$set": {"profile_image": request.image_url}}, upsert=True)
-        return {"status": "success", "message": "Profile image updated"}
-    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/user/profile-image/{user_id}")
-async def get_profile_image(user_id: str):
-    try:
-        user = user_collection.find_one({"user_id": user_id}, {"profile_image": 1})
-        if user and "profile_image" in user: return {"image_url": user["profile_image"]}
-        else: return {"image_url": ""} 
-    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+        # 2. 디버깅용 로그 추가됨
+        print(f"INFO: Request to update profile image for user: {request.user_id}")
+        print(f"INFO: New Image URL: {request.image_url}")
+        
+        # 유저가 존재하는지 확인
+        user = user_collection.find_one({"user_id": request.user_id})
+        
+        # 업데이트 수행
+        result = user_collection.update_one(
+            {"user_id": request.user_id}, 
+            {"$set": {"profile_image": request.image_url}}, 
+            upsert=True
+        )
+        
+        print(f"INFO: Update success. Matched: {result.matched_count}, Modified: {result.modified_count}")
+        return {"status": "success", "message": "Profile image updated successfully"}
+        
+    except Exception as e:
+        # 3. 에러 발생 시 원인을 로그에 출력
+        print(f"CRITICAL ERROR in update_profile_image: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Server Error: {str(e)}")
