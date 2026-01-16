@@ -10,3 +10,5 @@ dnspython
 email-validator
 python-multipart
 aiofiles
+passlib[bcrypt]
+python-jose[cryptography]

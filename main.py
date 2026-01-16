@@ -15,11 +15,18 @@ import os
 from dotenv import load_dotenv
 from bson import ObjectId
 from bson.binary import Binary
+from passlib.context import CryptContext # 비밀번호 해싱
+from jose import JWTError, jwt # JWT 토큰
 
 load_dotenv() # .env 파일 로드
 
 GENAI_API_KEY = os.getenv("GENAI_API_KEY")
 MONGO_URI = os.getenv("MONGO_URI")
+
+# [NEW] JWT 보안 설정 (실제 배포 시엔 .env에 넣는 것이 좋습니다)
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-should-be-very-secure") # .env에 SECRET_KEY 추가 권장
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 토큰 만료 시간 (24시간)
 
 # --- 1. 초기 설정 ---
 MONGO_URI = MONGO_URI.strip() 
@@ -38,6 +45,12 @@ diary_collection = db["diaries"]
 user_collection = db["users"]
 report_collection = db["life_reports"]
 music_collection = db["musics"]
+
+# [NEW] 비밀번호 해싱 컨텍스트
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# [NEW] OAuth2 스키마 (토큰 URL 설정)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 app = FastAPI()
 
@@ -66,6 +79,52 @@ DEFAULT_MUSIC_LIST = [
     }
 ]
 
+# --- [Helper] 보안 함수 ---
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+# [NEW] 현재 로그인한 유저 가져오기 (Dependency)
+# 이 함수를 API의 파라미터로 넣으면, 토큰을 검사해서 유저 ID를 반환해줍니다.
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    return user_id
+
+# --- [DTO] 데이터 모델 ---
+
+# [NEW] 회원가입 요청 모델
+class UserCreate(BaseModel):
+    user_id: str
+    password: str
+
+# [NEW] 토큰 응답 모델
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    user_id: str # 클라이언트 편의를 위해 user_id도 같이 반환
 
 # --- [DTO] 요청 데이터 모델 (422 에러 해결의 핵심!) ---
 
@@ -328,6 +387,59 @@ def calculate_mood_statistics(user_id: str):
 # =========================================================
 # API 엔드포인트
 # =========================================================
+
+# --- [API 0] 회원가입 & 로그인 (NEW!) ---
+
+@app.post("/signup", response_model=Token)
+async def signup(user: UserCreate):
+    # 1. 이미 존재하는 ID인지 확인
+    if user_collection.find_one({"user_id": user.user_id}):
+        raise HTTPException(status_code=400, detail="User ID already exists")
+    
+    # 2. 비밀번호 해싱 (암호화)
+    hashed_password = get_password_hash(user.password)
+    
+    # 3. 유저 정보 저장 (초기값 포함)
+    new_user = {
+        "user_id": user.user_id,
+        "hashed_password": hashed_password,
+        "joined_at": datetime.utcnow(),
+        "big5_scores": get_default_big5(),
+        "trait_counts": {},
+        "user_tag_counts": {},
+        "saved_musics": [],
+        "profile_image": ""
+    }
+    user_collection.insert_one(new_user)
+    
+    # 4. 바로 로그인 처리 (토큰 발급)
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.user_id}, expires_delta=access_token_expires
+    )
+    
+    return {"access_token": access_token, "token_type": "bearer", "user_id": user.user_id}
+
+@app.post("/login", response_model=Token)
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    # OAuth2PasswordRequestForm은 username, password 필드를 가집니다.
+    # 여기서는 username을 user_id로 사용합니다.
+    user = user_collection.find_one({"user_id": form_data.username})
+    
+    if not user or not verify_password(form_data.password, user["hashed_password"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect user ID or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # 토큰 발급
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user["user_id"]}, expires_delta=access_token_expires
+    )
+    
+    return {"access_token": access_token, "token_type": "bearer", "user_id": user["user_id"]}
 
 # --- [API 1] 일기 작성 및 저장 ---
 @app.post("/analyze-and-save")
