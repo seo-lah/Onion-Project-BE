@@ -4,10 +4,11 @@ import pymongo
 import google.generativeai as genai
 import re
 import time
-from datetime import datetime
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form, Response
+from datetime import datetime, timedelta
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form, Response, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 from collections import Counter
