@@ -142,7 +142,6 @@ class DiaryRequest(BaseModel):
     tags: List[str] = []             
     is_temporary: bool = False       
     diary_id: Optional[str] = None
-    image_url: Optional[str] = None
 
 # 2. 일기 수정 요청
 class DiaryUpdateRequest(BaseModel):
@@ -154,7 +153,6 @@ class DiaryUpdateRequest(BaseModel):
     mood: Optional[str] = None
     weather: Optional[str] = None
     tags: Optional[List[str]] = None
-    image_url: Optional[str] = None
 
 # 3. 인생 지도 요청
 class LifeMapRequest(BaseModel):
@@ -463,7 +461,6 @@ async def analyze_and_save(request: DiaryRequest, background_tasks: BackgroundTa
                 "mood": request.mood,
                 "weather": request.weather,
                 "tags": request.tags,
-                "image_url": request.image_url,
                 "is_temporary": True,
                 "updated_at": datetime.utcnow()
             }
@@ -519,7 +516,6 @@ async def analyze_and_save(request: DiaryRequest, background_tasks: BackgroundTa
             "mood": request.mood,
             "weather": request.weather,
             "tags": request.tags,
-            "image_url": request.image_url,
             "is_temporary": False,
             "analysis": analysis_result.get("analysis"),
             "recommend": analysis_result.get("recommend"),
@@ -587,7 +583,6 @@ async def update_diary_content(diary_id: str, request: DiaryUpdateRequest):
         if request.entry_time is not None: update_fields["entry_time"] = request.entry_time
         if request.mood is not None: update_fields["mood"] = request.mood
         if request.weather is not None: update_fields["weather"] = request.weather
-        if request.image_url is not None: update_fields["image_url"] = request.image_url
         
         if request.tags is not None:
             old_tags = old_diary.get("tags", [])
