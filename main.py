@@ -46,6 +46,7 @@ diary_collection = db["diaries"]
 user_collection = db["users"]
 report_collection = db["life_reports"]
 music_collection = db["musics"]
+image_collection = db["images"]
 
 # [NEW] 비밀번호 해싱 컨텍스트
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -799,18 +800,72 @@ async def get_user_diaries(user_id: str):
         diaries.append(doc)
     return {"diaries": diaries}
 
-# --- [API 9] 프로필 이미지 ---
-@app.put("/user/profile-image") # 1. PUT으로 변경됨
+# --- [API 5.5] 이미지 파일 업로드 (덮어쓰기 모드) ---
+@app.post("/user/image/upload")
+async def upload_image(
+    user_id: str = Form(...),
+    file: UploadFile = File(...)
+):
+    try:
+        file_content = await file.read()
+        # 5MB 제한
+        if len(file_content) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large. Limit is 5MB.")
+
+        # [핵심] 기존 이미지 삭제 (덮어쓰기 효과)
+        # 이 유저가 올린 이미지가 있다면 싹 지웁니다.
+        image_collection.delete_many({"user_id": user_id})
+
+        # 새 이미지 저장
+        image_doc = {
+            "user_id": user_id,
+            "filename": file.filename,
+            "file_data": Binary(file_content),
+            "content_type": file.content_type,
+            "uploaded_at": datetime.utcnow()
+        }
+        
+        # 'images'라는 별도 컬렉션에 저장
+        result = image_collection.insert_one(image_doc)
+        
+        # 프론트에서 바로 쓸 수 있는 이미지 주소 생성
+        image_url = f"/user/image/stream/{str(result.inserted_id)}"
+        
+        return {
+            "status": "success", 
+            "message": "Image uploaded successfully (Overwritten)",
+            "image_url": image_url 
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- [API 5.6] 이미지 스트리밍 (보여주기) ---
+@app.get("/user/image/stream/{image_id}")
+async def stream_image(image_id: str):
+    try:
+        if not ObjectId.is_valid(image_id): 
+            raise HTTPException(status_code=400, detail="Invalid ID")
+            
+        image = image_collection.find_one({"_id": ObjectId(image_id)})
+        if not image: 
+            raise HTTPException(status_code=404, detail="Image not found")
+            
+        return Response(content=image["file_data"], media_type=image.get("content_type", "image/jpeg"))
+    except Exception as e: 
+        raise HTTPException(status_code=500, detail=str(e))
+    
+# --- [API 9] 프로필 이미지 주소 저장 (2단계: 변경 확정) ---
+@app.put("/user/profile-image")
 async def update_profile_image(request: UserProfileImageRequest):
     try:
-        # 2. 디버깅용 로그 추가됨
+        # 디버깅용 로그
         print(f"INFO: Request to update profile image for user: {request.user_id}")
         print(f"INFO: New Image URL: {request.image_url}")
         
         # 유저가 존재하는지 확인
         user = user_collection.find_one({"user_id": request.user_id})
         
-        # 업데이트 수행
+        # 유저 정보 업데이트 (이미지 주소 저장)
         result = user_collection.update_one(
             {"user_id": request.user_id}, 
             {"$set": {"profile_image": request.image_url}}, 
@@ -821,6 +876,17 @@ async def update_profile_image(request: UserProfileImageRequest):
         return {"status": "success", "message": "Profile image updated successfully"}
         
     except Exception as e:
-        # 3. 에러 발생 시 원인을 로그에 출력
         print(f"CRITICAL ERROR in update_profile_image: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Server Error: {str(e)}")
+
+# --- [API 9.1] 프로필 이미지 주소 조회 ---
+@app.get("/user/profile-image/{user_id}")
+async def get_profile_image(user_id: str):
+    try:
+        user = user_collection.find_one({"user_id": user_id}, {"profile_image": 1})
+        if user and "profile_image" in user: 
+            return {"image_url": user["profile_image"]}
+        else: 
+            return {"image_url": ""} # 이미지가 없으면 빈 값 반환
+    except Exception as e: 
+        raise HTTPException(status_code=500, detail=str(e))
