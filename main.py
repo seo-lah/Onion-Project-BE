@@ -88,10 +88,13 @@ DEFAULT_IMAGE_URL = "/static/images/default_bg.jpg"
 
 # --- [Helper] 보안 함수 ---
 def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+    # 검증 시에도 72바이트 제한에 걸릴 수 있으므로 안전하게 처리
+    # (passlib 버전에 따라 verify 내부에서 처리해주기도 하지만, 명시적으로 자르는 게 안전합니다)
+    return pwd_context.verify(plain_password[:72], hashed_password)
 
 def get_password_hash(password):
-    return pwd_context.hash(password)
+    # [FIX] Bcrypt는 72바이트 제한이 있으므로, 초과 시 앞부분만 잘라서 해싱합니다.
+    return pwd_context.hash(password[:72])
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -416,6 +419,10 @@ def calculate_mood_statistics(user_id: str):
 
 @app.post("/signup", response_model=Token)
 async def signup(user: UserCreate):
+    # [디버깅] 서버가 받은 비밀번호를 콘솔에 찍어봅니다.
+    print(f"DEBUG: Received Password: {user.password}") 
+    print(f"DEBUG: Password Length: {len(user.password)}")
+    
     # 1. 이미 존재하는 ID인지 확인
     if user_collection.find_one({"user_id": user.user_id}):
         raise HTTPException(status_code=400, detail="User ID already exists")
