@@ -168,6 +168,11 @@ class UserProfileImageRequest(BaseModel):
     user_id: str
     image_url: str
 
+# 5. 태그 삭제 요청
+class TagDeleteRequest(BaseModel):
+    user_id: str
+    tag_name: str
+
 # --- [Helper] Big5 초기값 ---
 def get_default_big5():
     default_score = 5
@@ -929,4 +934,56 @@ async def reset_profile_image(user_id: str = Form(...)): # 또는 JSON 바디 �
             "image_url": DEFAULT_IMAGE_URL
         }
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+# --- [API 10] 태그 삭제 및 'unsorted'로 대체 ---
+@app.delete("/user/tags")
+async def delete_and_replace_tag(request: TagDeleteRequest):
+    try:
+        # "unsorted" 태그 자체를 삭제하려는 경우 차단
+        if request.tag_name == "unsorted":
+            raise HTTPException(status_code=400, detail="Cannot delete the default 'unsorted' tag.")
+
+        print(f"INFO: Deleting tag '{request.tag_name}' for user {request.user_id}")
+
+        # 1. 유저 프로필(통계) 업데이트
+        # 삭제할 태그의 카운트를 가져와서 'unsorted'에 더해줍니다.
+        user = user_collection.find_one({"user_id": request.user_id})
+        if user:
+            tag_counts = user.get("user_tag_counts", {})
+            count_to_move = tag_counts.get(request.tag_name, 0)
+
+            if count_to_move > 0:
+                # (1) 기존 태그 삭제 ($unset) 및 (2) unsorted 카운트 증가 ($inc)
+                user_collection.update_one(
+                    {"user_id": request.user_id},
+                    {
+                        "$unset": {f"user_tag_counts.{request.tag_name}": ""},
+                        "$inc": {"user_tag_counts.unsorted": count_to_move}
+                    }
+                )
+
+        # 2. 일기 데이터 업데이트 (Bulk Update)
+        # 해당 태그를 가진 모든 일기를 찾아서 처리합니다.
+        
+        # 단계 2-1: 해당 태그가 있는 일기에 'unsorted' 태그 추가 ($addToSet은 중복 방지됨)
+        diary_collection.update_many(
+            {"user_id": request.user_id, "tags": request.tag_name},
+            {"$addToSet": {"tags": "unsorted"}}
+        )
+
+        # 단계 2-2: 해당 태그 삭제 ($pull)
+        result = diary_collection.update_many(
+            {"user_id": request.user_id, "tags": request.tag_name},
+            {"$pull": {"tags": request.tag_name}}
+        )
+
+        return {
+            "status": "success", 
+            "message": f"Tag '{request.tag_name}' replaced with 'unsorted'.",
+            "modified_diaries": result.modified_count
+        }
+
+    except Exception as e:
+        print(f"Error in delete_tag: {e}")
         raise HTTPException(status_code=500, detail=str(e))
