@@ -57,17 +57,10 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 app = FastAPI()
 
 # CORS 설정
-origins = [
-    "http://localhost:3000",    # 로컬 개발용
-    "http://localhost:5173",    # Vite 로컬 개발용
-    "https://onion-project-fqyt.onrender.com", # 자기 자신
-    "https://576241343e51.ngrok-free.app", # ★ 지금 쓰시는 프론트엔드 주소 추가!
-    "*" # 혹시 모르니 전체 허용도 유지
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
+    allow_origin_regex="https://.*\.ngrok-free\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
