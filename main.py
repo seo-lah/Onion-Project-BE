@@ -21,10 +21,17 @@ from jose import JWTError, jwt # JWT 토큰
 
 load_dotenv() # .env 파일 로드
 
-GENAI_API_KEY = os.getenv("GENAI_API_KEY")
+GENAI_API_KEY_1 = os.getenv("GENAI_API_KEY")
+GENAI_API_KEY_2 = os.getenv("GENAI_API_KEY_2")
 MONGO_URI = os.getenv("MONGO_URI")
 
-# [NEW] JWT 보안 설정 (실제 배포 시엔 .env에 넣는 것이 좋습니다)
+API_KEYS = [key for key in [GENAI_API_KEY_1, GENAI_API_KEY_2] if key]
+
+if not API_KEYS:
+    raise ValueError("No GENAI_API_KEY found in environment variables.")
+
+
+# JWT 보안 설정 (실제 배포 시엔 .env에 넣는 것이 좋습니다)
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-should-be-very-secure") # .env에 SECRET_KEY 추가 권장
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 토큰 만료 시간 (24시간)
@@ -33,7 +40,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 토큰 만료 시간 (24시간)
 MONGO_URI = MONGO_URI.strip()
 
 # 모델 설정
-genai.configure(api_key=GENAI_API_KEY)
+genai.configure(api_key=API_KEYS[0])
 model = genai.GenerativeModel(
     'gemini-3-flash-preview',
     generation_config={"response_mime_type": "application/json"}
@@ -48,10 +55,10 @@ report_collection = db["life_reports"]
 music_collection = db["musics"]
 image_collection = db["images"]
 
-# [NEW] 비밀번호 해싱 컨텍스트
+# 비밀번호 해싱 컨텍스트
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# [NEW] OAuth2 스키마 (토큰 URL 설정)
+# OAuth2 스키마 (토큰 URL 설정)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 app = FastAPI()
@@ -106,7 +113,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-# [NEW] 현재 로그인한 유저 가져오기 (Dependency)
+# 현재 로그인한 유저 가져오기 (Dependency)
 # 이 함수를 API의 파라미터로 넣으면, 토큰을 검사해서 유저 ID를 반환해줍니다.
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
@@ -122,6 +129,42 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     except JWTError:
         raise credentials_exception
     return user_id
+
+# --- [Helper] Gemini 호출 Fallback 함수 ---
+async def call_gemini_with_fallback(prompt_parts):
+    """
+    여러 API 키를 순회하며 Gemini 호출을 시도합니다.
+    429(Too Many Requests)나 ResourceExhausted 에러 발생 시 다음 키로 전환합니다.
+    """
+    last_exception = None
+    
+    for i, api_key in enumerate(API_KEYS):
+        try:
+            # 현재 순서의 키로 설정 변경
+            genai.configure(api_key=api_key)
+            
+            # 생성 시도
+            response = model.generate_content(prompt_parts)
+            return response
+            
+        except Exception as e:
+            last_exception = e
+            error_msg = str(e)
+            
+            # 리소스 부족(할당량 초과) 관련 에러인지 확인
+            if "429" in error_msg or "ResourceExhausted" in error_msg or "403" in error_msg:
+                print(f"⚠️ WARNING: API Key {i+1} failed (Quota/Limit). Switching to next key...")
+                continue # 다음 키로 시도
+            else:
+                # 할당량 문제가 아니라면(예: 프롬프트 오류) 즉시 에러 발생
+                print(f"❌ ERROR: Gemini logic error: {e}")
+                raise e
+    
+    # 모든 키를 다 썼는데도 실패한 경우
+    print("❌ CRITICAL: All API keys exhausted.")
+    return None
+
+
 
 # --- [DTO] 데이터 모델 ---
 
@@ -298,15 +341,21 @@ async def get_gemini_analysis(diary_text: str, user_traits: List[str], retries=2
     traits_context = ', '.join(user_traits) if user_traits else "None"
     user_input = f"Diary Entry: {cleaned_text}\nUser Traits (Context): {traits_context}"
     
+    # [FIX] 단순 model.generate_content 대신 Fallback 함수 사용
     for attempt in range(retries + 1):
         try:
-            response = model.generate_content([system_instruction, user_input])
-            clean_json = re.sub(r"```json|```", "", response.text).strip()
-            data = json.loads(clean_json)
-            if all(k in data for k in ["analysis", "recommend", "keywords", "big5"]):
-                return data
+            # Fallback 함수 호출 (알아서 키 바꿔가며 시도함)
+            response = await call_gemini_with_fallback([system_instruction, user_input])
+            
+            if response:
+                clean_json = re.sub(r"```json|```", "", response.text).strip()
+                data = json.loads(clean_json)
+                if all(k in data for k in ["analysis", "recommend", "keywords", "big5"]):
+                    return data
         except Exception as e:
+            print(f"Attempt {attempt} failed: {e}")
             if attempt < retries: time.sleep(1)
+            
     return None
 
 # --- 장기 분석 함수 ---
@@ -319,9 +368,12 @@ async def get_long_term_analysis(diary_history: str, data_count: int):
     Output JSON: {{ "deep_patterns": [...], "seasonality": "...", "growth_evaluation": "...", "life_keywords": [...], "advice_for_future": "..." }}
     """
     try:
-        response = model.generate_content([system_instruction, diary_history])
-        clean_json = re.sub(r"```json|```", "", response.text).strip()
-        return json.loads(clean_json)
+        # [FIX] Fallback 함수 사용
+        response = await call_gemini_with_fallback([system_instruction, diary_history])
+        
+        if response:
+            clean_json = re.sub(r"```json|```", "", response.text).strip()
+            return json.loads(clean_json)
     except: return None
 
 # --- 백그라운드 작업 함수 (뒤에서 몰래 계산할 녀석) ---
