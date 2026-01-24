@@ -18,6 +18,7 @@ from bson import ObjectId
 from bson.binary import Binary
 from passlib.context import CryptContext # 비밀번호 해싱
 from jose import JWTError, jwt # JWT 토큰
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 load_dotenv() # .env 파일 로드
 
@@ -139,32 +140,49 @@ async def call_gemini_with_fallback(prompt_parts):
     여러 API 키를 순회하며 Gemini 호출을 시도합니다.
     429(Too Many Requests)나 ResourceExhausted 에러 발생 시 다음 키로 전환합니다.
     """
+
+    # [핵심] 안전 필터 설정: 모든 차단 기준을 'BLOCK_NONE'으로 설정
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
+
     last_exception = None
     
     for i, api_key in enumerate(API_KEYS):
         try:
-            # 현재 순서의 키로 설정 변경
+            # 키 설정
             genai.configure(api_key=api_key)
             
-            # 생성 시도
-            response = model.generate_content(prompt_parts)
-            return response
+            # 생성 시도 (safety_settings 추가)
+            response = model.generate_content(
+                prompt_parts, 
+                safety_settings=safety_settings
+            )
+            
+            # [추가 검증] 응답이 비어있는지 확인 (finish_reason 확인 등)
+            # response.text에 접근했을 때 에러가 나면 이 블록은 catch로 넘어감
+            if response.text: 
+                return response
             
         except Exception as e:
             last_exception = e
             error_msg = str(e)
             
-            # 리소스 부족(할당량 초과) 관련 에러인지 확인
+            # 1. 429(Quota) 에러 등은 다음 키로 시도
             if "429" in error_msg or "ResourceExhausted" in error_msg or "403" in error_msg:
-                print(f"⚠️ WARNING: API Key {i+1} failed (Quota/Limit). Switching to next key...")
-                continue # 다음 키로 시도
-            else:
-                # 할당량 문제가 아니라면(예: 프롬프트 오류) 즉시 에러 발생
-                print(f"❌ ERROR: Gemini logic error: {e}")
-                raise e
-    
-    # 모든 키를 다 썼는데도 실패한 경우
-    print("❌ CRITICAL: All API keys exhausted.")
+                print(f"⚠️ WARNING: API Key {i+1} failed (Quota). Switching...")
+                continue
+            
+            # 2. Safety Filter에 걸려서 response.text가 없는 경우 (ValueError 등)
+            # BLOCK_NONE을 했는데도 걸린다면, 정말 심각한 내용이거나 모델 오류임
+            # 하지만 보통 BLOCK_NONE이면 해결됨.
+            print(f"⚠️ WARNING: API Key {i+1} error: {error_msg}")
+            continue
+            
+    print("❌ CRITICAL: All API keys exhausted or Content Blocked.")
     return None
 
 # --- [Helper] 이미지 OCR Fallback 함수 ---
