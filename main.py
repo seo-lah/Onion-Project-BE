@@ -164,6 +164,55 @@ async def call_gemini_with_fallback(prompt_parts):
     print("❌ CRITICAL: All API keys exhausted.")
     return None
 
+# --- [Helper] 이미지 OCR Fallback 함수 ---
+async def extract_text_from_image_with_fallback(image_path: str):
+    """
+    이미지를 업로드하고 텍스트를 추출합니다. 
+    API 키 제한(429) 발생 시 다음 키로 전환하여 처음부터(업로드부터) 다시 시도합니다.
+    """
+    system_instruction = "You are a helpful assistant that transcribes handwritten notes into text. Output ONLY the transcribed text."
+    prompt = "이 이미지에 적힌 손글씨를 텍스트로 변환해줘. 부가적인 설명 없이 텍스트 내용만 출력해."
+
+    for i, api_key in enumerate(API_KEYS):
+        uploaded_file = None
+        try:
+            # 1. 키 설정
+            genai.configure(api_key=api_key)
+            
+            # 2. 모델 재설정 (키 변경 반영을 위해)
+            local_model = genai.GenerativeModel(
+                'gemini-3-flash-preview',
+                generation_config={"response_mime_type": "text/plain"} # 텍스트만 받음
+            )
+
+            # 3. 파일 업로드 (해당 키의 공간에 업로드됨)
+            print(f"INFO: Uploading image to Gemini with Key {i+1}...")
+            uploaded_file = genai.upload_file(path=image_path)
+
+            # 4. 분석 요청
+            response = local_model.generate_content([prompt, uploaded_file])
+            return response.text
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f"⚠️ WARNING: OCR failed with Key {i+1}: {error_msg}")
+            
+            # 리소스 부족 에러면 다음 키로 시도, 아니면 에러
+            if "429" in error_msg or "ResourceExhausted" in error_msg or "403" in error_msg:
+                continue
+            else:
+                # 파일 포맷 문제 등일 수 있으므로 로그 찍고 다음 키 시도 (혹은 중단)
+                continue 
+        
+        finally:
+            # 5. Gemini 서버 용량 관리를 위해 업로드한 파일 삭제
+            if uploaded_file:
+                try: 
+                    uploaded_file.delete()
+                    print(f"INFO: Deleted remote file for Key {i+1}")
+                except: pass
+
+    return None
 
 
 # --- [DTO] 데이터 모델 ---
@@ -1104,3 +1153,41 @@ async def delete_diary(diary_id: str, user_id: str):
     except Exception as e:
         print(f"Error in delete_diary: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+# --- [API 12] 손글씨 이미지 텍스트 추출 (OCR) ---
+@app.post("/scan-diary")
+async def scan_diary_text(
+    user_id: str = Form(...),
+    file: UploadFile = File(...)
+):
+    temp_filename = f"temp_ocr_{user_id}_{int(time.time())}.jpg"
+    
+    try:
+        print(f"INFO: Receiving image for OCR from user {user_id}")
+        
+        # 1. 서버에 잠시 저장 (Gemini 업로드를 위해)
+        with open(temp_filename, "wb") as buffer:
+            buffer.write(await file.read())
+
+        # 2. Fallback 함수 호출하여 텍스트 추출
+        extracted_text = await extract_text_from_image_with_fallback(temp_filename)
+
+        if not extracted_text:
+            raise HTTPException(status_code=500, detail="Failed to extract text from image.")
+
+        print(f"INFO: Text extracted successfully: {extracted_text[:30]}...")
+
+        return {
+            "status": "success",
+            "message": "Text extracted successfully",
+            "extracted_text": extracted_text.strip()
+        }
+
+    except Exception as e:
+        print(f"Error in scan_diary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    finally:
+        # 3. 로컬 임시 파일 삭제 (청소)
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
