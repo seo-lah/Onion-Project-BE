@@ -36,6 +36,9 @@ SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-should-be-very-secure") # 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 토큰 만료 시간 (24시간)
 
+# 총괄 리포트 월간 제한 횟수
+LIFE_MAP_MONTHLY_LIMIT = 2
+
 # --- 1. 초기 설정 ---
 MONGO_URI = MONGO_URI.strip()
 
@@ -584,7 +587,8 @@ async def signup(user: UserCreate):
         "trait_counts": {},
         "user_tag_counts": {},
         "saved_musics": [],
-        "profile_image": ""
+        "profile_image": "",
+        "life_map_usage": {"month": datetime.utcnow().strftime("%Y-%m"), "count": 0}
     }
     user_collection.insert_one(new_user)
     
@@ -822,13 +826,23 @@ async def get_user_stats(user_id: str):
 
     user_profile["_id"] = str(user_profile["_id"])
 
+    # 총괄 리포트 사용량 로직
+    current_month = datetime.utcnow().strftime("%Y-%m")
+    usage_data = user_profile.get("life_map_usage", {"month": current_month, "count": 0})
+    
+    # 월이 바뀌었으면(DB 데이터가 지난달이면) 0으로 리셋해서 보여줌
+    if usage_data["month"] != current_month:
+        usage_data = {"month": current_month, "count": 0}
+
     return {
         "user_id": user_profile["user_id"],
         "big5_scores": user_profile.get("big5_scores", get_default_big5()),
         "ai_trait_counts": user_profile.get("trait_counts", {}),
         "user_tag_counts": user_profile.get("user_tag_counts", {}),
         "service_days": service_days,
-        "mood_stats": mood_stats
+        "mood_stats": mood_stats,
+        "life_map_usage": usage_data,           # 현재 사용량 전달
+        "life_map_limit": LIFE_MAP_MONTHLY_LIMIT # 전체 한도 전달
     }
 
 # --- [API 4] 인생 지도 분석 (Timeline-Flow: 과거 vs 현재 균형 분석) ---
@@ -836,6 +850,25 @@ async def get_user_stats(user_id: str):
 async def analyze_life_map(request: LifeMapRequest):
     try:
         print(f"INFO: Starting Life Map analysis for {request.user_id} (Balanced Timeline)")
+
+        # ▼▼▼ [NEW] 0. 유저 및 사용량 확인 & 제한 체크 ▼▼▼
+        user = user_collection.find_one({"user_id": request.user_id})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        current_month = datetime.utcnow().strftime("%Y-%m")
+        usage_data = user.get("life_map_usage", {"month": current_month, "count": 0})
+
+        # 월이 바뀌었으면 초기화
+        if usage_data["month"] != current_month:
+            usage_data = {"month": current_month, "count": 0}
+
+        # 횟수 제한 체크 (이미 다 썼으면 429 에러)
+        if usage_data["count"] >= LIFE_MAP_MONTHLY_LIMIT:
+             raise HTTPException(
+                status_code=429, # Too Many Requests
+                detail=f"이번 달 총괄 리포트 생성 한도({LIFE_MAP_MONTHLY_LIMIT}회)를 초과했습니다."
+            )
 
         # 1. 모든 일기 가져오기 (오래된 순)
         # 필요한 필드(특히 analysis)만 가져와서 최적화
@@ -911,14 +944,25 @@ async def analyze_life_map(request: LifeMapRequest):
         }
         db["life_reports"].insert_one(report_data)
 
+        # ▼▼▼ 사용 횟수 1 증가 (성공 시에만 DB 업데이트) ▼▼▼
+        new_count = usage_data["count"] + 1
+        user_collection.update_one(
+            {"user_id": request.user_id},
+            {"$set": {"life_map_usage": {"month": current_month, "count": new_count}}}
+        )
+
         return {
             "status": "success",
             "message": "인생 지도 분석 완료",
-            "data": report_result
+            "data": report_result,
+            "usage": {"current": new_count, "limit": LIFE_MAP_MONTHLY_LIMIT}
         }
 
     except Exception as e:
         print(f"CRITICAL ERROR: {e}")
+        # 429 에러는 그대로 전달
+        if "429" in str(e) or "한도" in str(e):
+             raise HTTPException(status_code=429, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/life-map/{user_id}")
