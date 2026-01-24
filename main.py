@@ -407,23 +407,37 @@ async def get_gemini_analysis(diary_text: str, user_traits: List[str], retries=2
             
     return None
 
-# --- 장기 분석 함수 ---
-async def get_long_term_analysis(diary_history: str, data_count: int):
-    analysis_focus = "Focus on Deep Patterns."
-    if data_count < 10: analysis_focus = "Focus on short-term changes."
+# --- [Helper] 장기 분석 함수 (Timeline-Flow: Past vs Present Prompt) ---
+async def get_long_term_analysis_rag(context_data: str, data_count: int):
     
-    system_instruction = f"""
-    Role: Onion Master. Analyze diary history. {analysis_focus}
-    Output JSON: {{ "deep_patterns": [...], "seasonality": "...", "growth_evaluation": "...", "life_keywords": [...], "advice_for_future": "..." }}
+    system_instruction = """
+    Role: You are "Onion Master," an insightful AI biographer who analyzes the user's growth history.
+    
+    Task: Read the chronological diary summaries and create a "Growth Report" that contrasts the past with the present.
+    **Do NOT focus only on recent events. Treat the entire timeline with equal importance to find the trajectory.**
+
+    Output JSON Structure:
+    {
+        "deep_patterns": ["Pattern 1", "Pattern 2", ...], 
+        "past_vs_present": "String. (Crucial Section: Explicitly compare 'Past You' vs 'Current You'. e.g., 'In the beginning, you struggled with X, but recently you interpret it as Y.')",
+        "growth_evaluation": "String. (Summarize their overall maturity and emotional evolution)",
+        "life_keywords": ["Keyword1", "Keyword2", "Keyword3", "Keyword4", "Keyword5"],
+        "advice_for_future": "String. (Advice based on their long-term tendency)"
+    }
+    
+    Tone: Warm, insightful, and professional (Korean honorifics).
     """
+    
     try:
-        # [FIX] Fallback 함수 사용
-        response = await call_gemini_with_fallback([system_instruction, diary_history])
+        # Fallback 함수 사용하여 안정성 확보
+        response = await call_gemini_with_fallback([system_instruction, context_data])
         
         if response:
             clean_json = re.sub(r"```json|```", "", response.text).strip()
             return json.loads(clean_json)
-    except: return None
+    except Exception as e:
+        print(f"Analysis Error: {e}")
+        return None
 
 # --- 백그라운드 작업 함수 (뒤에서 몰래 계산할 녀석) ---
 def update_user_stats_bg(user_id: str, new_keywords: List[str], new_tags: List[str], new_big5: dict):
@@ -784,14 +798,27 @@ async def get_user_stats(user_id: str):
         "mood_stats": mood_stats
     }
 
-# --- [API 4] 인생 지도 분석 ---
+# --- [API 4] 인생 지도 분석 (Timeline-Flow: 과거 vs 현재 균형 분석) ---
 @app.post("/analyze-life-map")
 async def analyze_life_map(request: LifeMapRequest):
     try:
-        print(f"INFO: Starting Life Map analysis for {request.user_id}")
+        print(f"INFO: Starting Life Map analysis for {request.user_id} (Balanced Timeline)")
 
-        # 1. MongoDB에서 일기 가져오기
-        cursor = diary_collection.find({"user_id": request.user_id}).sort("created_at", 1)
+        # 1. 모든 일기 가져오기 (오래된 순)
+        # 필요한 필드(특히 analysis)만 가져와서 최적화
+        cursor = diary_collection.find(
+            {"user_id": request.user_id},
+            {
+                "entry_date": 1, 
+                "content": 1, 
+                "mood": 1, 
+                "keywords_snapshot": 1, 
+                "one_liner": 1,
+                "analysis": 1, # [핵심] 심리 분석 데이터 포함
+                "_id": 0
+            }
+        ).sort("entry_date", 1)
+        
         diaries = list(cursor)
 
         if not diaries:
@@ -800,19 +827,44 @@ async def analyze_life_map(request: LifeMapRequest):
         if len(diaries) < 3:
             return {
                 "status": "fail", 
-                "message": "데이터가 너무 적습니다. 일기를 3개 이상 작성한 후 다시 시도해주세요."
+                "message": "데이터가 너무 적습니다. 최소 3개 이상의 일기가 필요합니다."
             }
 
-        # 2. 텍스트 변환
-        full_context = ""
+        # 2. [Context Building] "정보 정제(Distillation)" 전략
+        # 원문 대신, 이미 분석된 '심리 통찰(Analysis)' 데이터를 사용하여 정보 손실을 최소화하고 흐름을 잡습니다.
+        
+        full_context = "--- User's Psychological Timeline (Data extracted from daily analyses) ---\n"
+        
         for d in diaries:
-            date_val = d.get("created_at", datetime.utcnow())
-            date_str = date_val.strftime("%Y-%m-%d")
-            content = d.get("content", "")
-            full_context += f"[{date_str}] {content}\n"
+            date_str = d.get("entry_date", "Unknown")
+            mood = d.get("mood", "Unknown")
+            
+            # [핵심 변경] 단순 요약(one_liner) 대신 'analysis' 객체의 심층 정보를 우선 사용
+            analysis_data = d.get("analysis", {})
+            
+            if analysis_data:
+                # Theme 1: 감정의 흐름 / Theme 2: 핵심 신념 / Theme 4: 반복 패턴
+                # 이 내용들은 원문의 '심리적 엑기스'이므로 원문보다 분석에 훨씬 유리합니다.
+                core_flow = analysis_data.get("theme1", "")
+                beliefs = analysis_data.get("theme2", "")
+                patterns = analysis_data.get("theme4", "")
+                
+                # AI에게 줄 정보 조립
+                line = f"Date: {date_str} | Mood: {mood} | Insight: {core_flow} / Beliefs: {beliefs} / Pattern: {patterns}"
+            
+            elif d.get("one_liner"):
+                # 분석 데이터가 없는 옛날 데이터는 one_liner라도 씁니다.
+                line = f"Date: {date_str} | Mood: {mood} | Summary: {d.get('one_liner')}"
+            
+            else:
+                # 아무 분석도 없는 경우 어쩔 수 없이 원문 앞부분 사용
+                raw_content = d.get("content", "").replace("\n", " ")[:100]
+                line = f"Date: {date_str} | Mood: {mood} | Raw Fragment: {raw_content}..."
+            
+            full_context += line + "\n"
 
-        # 3. Gemini 분석 요청
-        report_result = await get_long_term_analysis(full_context, len(diaries))
+        # 3. Gemini 분석 요청 (새로 만든 헬퍼 함수 사용)
+        report_result = await get_long_term_analysis_rag(full_context, len(diaries))
 
         if not report_result:
              raise HTTPException(status_code=500, detail="Gemini generated an empty report.")
@@ -821,7 +873,7 @@ async def analyze_life_map(request: LifeMapRequest):
         report_data = {
             "user_id": request.user_id,
             "created_at": datetime.utcnow(),
-            "period_months": request.period_months,
+            "period_type": "ALL_TIME_BALANCED", # 전체 기간임을 명시
             "diary_count": len(diaries),
             "result": report_result
         }
@@ -839,7 +891,6 @@ async def analyze_life_map(request: LifeMapRequest):
 
 @app.get("/life-map/{user_id}")
 async def get_life_map(user_id: str):
-    # (기존 코드와 동일)
     report = db["life_reports"].find_one({"user_id": user_id}, sort=[("created_at", -1)])
     if not report: return {"status": "empty"}
     report["_id"] = str(report["_id"])
