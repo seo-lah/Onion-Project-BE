@@ -269,6 +269,13 @@ class TagDeleteRequest(BaseModel):
     user_id: str
     tag_name: str
 
+# --- 미니 챗봇 요청 모델 (수정됨) ---
+class DiaryChatRequest(BaseModel):
+    user_id: str
+    diary_ids: List[str] # [변경] 일기 ID를 리스트로 받음 (최대 3개)
+    user_message: str
+    chat_history: List[Dict[str, str]] = [] # [{"role": "user", "text": "..."}, ...]
+
 # --- [Helper] Big5 초기값 ---
 def get_default_big5():
     default_score = 5
@@ -1236,7 +1243,8 @@ async def scan_diary_text(
     user_id: str = Form(...),
     file: UploadFile = File(...)
 ):
-    temp_filename = f"temp_ocr_{user_id}_{int(time.time())}.jpg"
+    timestamp = str(time.time()).replace(".", "") # 소수점(.)만 제거
+    temp_filename = f"temp_ocr_{user_id}_{timestamp}.jpg"
     
     try:
         print(f"INFO: Receiving image for OCR from user {user_id}")
@@ -1267,3 +1275,91 @@ async def scan_diary_text(
         # 3. 로컬 임시 파일 삭제 (청소)
         if os.path.exists(temp_filename):
             os.remove(temp_filename)
+
+
+# --- [API 13] 미니 챗봇 (일기 3개 선택 + 짧은 답변) ---
+@app.post("/chat/diary")
+async def chat_about_diary(request: DiaryChatRequest):
+    try:
+        # 1. 일기 개수 제한 체크 (최대 3개)
+        if len(request.diary_ids) > 3:
+            raise HTTPException(status_code=400, detail="You can select up to 3 diaries.")
+
+        # 2. 일기 데이터 일괄 조회 (MongoDB $in 연산자 사용)
+        obj_ids = [ObjectId(id) for id in request.diary_ids if ObjectId.is_valid(id)]
+        
+        cursor = diary_collection.find(
+            {"_id": {"$in": obj_ids}, "user_id": request.user_id}
+        )
+        diaries = list(cursor)
+
+        if not diaries:
+            raise HTTPException(status_code=404, detail="No diaries found.")
+
+        # 3. 문맥(Context) 조립: 여러 일기를 합칩니다.
+        combined_context = ""
+        for i, d in enumerate(diaries):
+            date = d.get("entry_date", "Unknown")
+            content = d.get("content", "")
+            # 분석 데이터 간단 요약
+            analysis = d.get("analysis", {})
+            emotion = analysis.get("theme1", "Unknown")
+            
+            combined_context += f"[Diary {i+1} ({date})]\nContent: {content}\nMain Emotion: {emotion}\n---\n"
+
+        # 4. 대화 기록 관리 (최근 5개 턴만 기억)
+        # 프론트에서 많이 보내도, 백엔드에서 뒤에서 5개만 자릅니다.
+        recent_history = request.chat_history[-5:] 
+        
+        history_text = ""
+        for chat in recent_history:
+            role = chat.get("role", "user")
+            text = chat.get("text", "")
+            history_text += f"{role}: {text}\n"
+
+        # 5. 시스템 프롬프트 (제약 조건 강화)
+        system_instruction = f"""
+        Role: You are "Mini Onion," a concise and warm psychological counselor.
+        
+        Context: The user has selected {len(diaries)} diary entries. Answer their question based on these entries.
+        
+        **CRITICAL RESPONSE RULES:**
+        1. **Separator:** You MUST use the symbol **'||'** to separate distinct sentences (This creates the chat bubbles).
+        2. **Length Limit:** Answer within **50 ~ 80 characters** (including spaces). This is a hard limit.
+        3. **Sentence Limit:** Use only **1 or 2 sentences**.
+        4. **Tone:** Warm, supportive, '해요체' (Korean Polite style). 
+        5. **No Fluff:** Do not use greetings like "Hello". Get straight to the answer.
+        
+        Example Input: "나 요즘 너무 힘들어."
+        Example Output: "그동안 정말 고생 많았어요. || 오늘은 맛있는 거 먹고 푹 쉬세요!"
+
+        [Selected Diaries Context]:
+        {combined_context}
+        """
+
+        final_prompt = f"{system_instruction}\n\n[Chat History (Last 5)]\n{history_text}\nUser: {request.user_message}\nMini Onion:"
+
+        # 6. Gemini 호출
+        response = await call_gemini_with_fallback([final_prompt])
+        
+        if not response:
+             raise HTTPException(status_code=500, detail="Gemini failed to respond.")
+
+        raw_text = response.text.strip()
+        
+        # 7. 응답 후처리: '||' 기준으로 잘라서 리스트로 변환
+        # 예: "고생했어 || 쉬자" -> ["고생했어", "쉬자"]
+        messages = [msg.strip() for msg in raw_text.split("||") if msg.strip()]
+
+        # (혹시 AI가 ||를 안 썼을 경우를 대비해, 리스트가 비어있으면 원본 통째로 넣음)
+        if not messages:
+            messages = [raw_text]
+
+        return {
+            "status": "success",
+            "messages": messages # [변경점] reply(str) -> messages(List[str])
+        }
+
+    except Exception as e:
+        print(f"Chat Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
