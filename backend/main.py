@@ -1241,8 +1241,8 @@ async def delete_diary(diary_id: str, current_user: str = Depends(get_current_us
 # --- [API 12] 손글씨 이미지 텍스트 추출 (OCR) ---
 @app.post("/scan-diary")
 async def scan_diary_text(
-    current_user: str = Depends(get_current_user),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    current_user: str = Depends(get_current_user)
 ):
     timestamp = str(time.time()).replace(".", "") # 소수점(.)만 제거
     temp_filename = f"temp_ocr_{current_user}_{timestamp}.jpg"
