@@ -44,11 +44,11 @@ LIFE_MAP_MONTHLY_LIMIT = 2
 MONGO_URI = MONGO_URI.strip()
 
 # 모델 설정
-genai.configure(api_key=API_KEYS[0])
-model = genai.GenerativeModel(
-    'gemini-3-flash-preview',
-    generation_config={"response_mime_type": "application/json"}
-)
+#genai.configure(api_key=API_KEYS[0])
+#model = genai.GenerativeModel(
+#    'gemini-3-flash-preview',
+#    generation_config={"response_mime_type": "application/json"}
+#)
 
 # MongoDB 연결
 client = pymongo.MongoClient(MONGO_URI, tlsCAFile=certifi.where())
@@ -141,7 +141,7 @@ async def call_gemini_with_fallback(prompt_parts):
     429(Too Many Requests)나 ResourceExhausted 에러 발생 시 다음 키로 전환합니다.
     """
 
-    # [핵심] 안전 필터 설정: 모든 차단 기준을 'BLOCK_NONE'으로 설정
+    # 안전 필터 해제 설정
     safety_settings = {
         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -156,30 +156,34 @@ async def call_gemini_with_fallback(prompt_parts):
             # 키 설정
             genai.configure(api_key=api_key)
             
+            current_model = genai.GenerativeModel(
+                'gemini-3-flash-preview',
+                generation_config={"response_mime_type": "application/json"}
+            )
+
             # 생성 시도 (safety_settings 추가)
-            response = model.generate_content(
+            print(f"INFO: Trying Gemini with API Key {i+1}...") # 로그 추가
+            response = current_model.generate_content(
                 prompt_parts, 
                 safety_settings=safety_settings
             )
             
-            # [추가 검증] 응답이 비어있는지 확인 (finish_reason 확인 등)
-            # response.text에 접근했을 때 에러가 나면 이 블록은 catch로 넘어감
+            # 3. 응답 확인
             if response.text: 
                 return response
             
         except Exception as e:
             last_exception = e
             error_msg = str(e)
+            print(f"⚠️ WARNING: API Key {i+1} failed: {error_msg}")
             
-            # 1. 429(Quota) 에러 등은 다음 키로 시도
+            # 할당량(429)이나 권한 문제면 다음 키로 넘어감
+            # (ResourceExhausted, 429, 403 등)
             if "429" in error_msg or "ResourceExhausted" in error_msg or "403" in error_msg:
-                print(f"⚠️ WARNING: API Key {i+1} failed (Quota). Switching...")
+                print(f"🔄 Switching to next API Key...")
                 continue
             
-            # 2. Safety Filter에 걸려서 response.text가 없는 경우 (ValueError 등)
-            # BLOCK_NONE을 했는데도 걸린다면, 정말 심각한 내용이거나 모델 오류임
-            # 하지만 보통 BLOCK_NONE이면 해결됨.
-            print(f"⚠️ WARNING: API Key {i+1} error: {error_msg}")
+            # 그 외 에러(Safety 등)라도 일단 다음 키 시도 (혹시 모르니)
             continue
             
     print("❌ CRITICAL: All API keys exhausted or Content Blocked.")
@@ -1205,13 +1209,10 @@ async def delete_diary(diary_id: str, current_user: str = Depends(get_current_us
         if not target_diary:
             raise HTTPException(status_code=404, detail="Diary not found or permission denied")
 
-        # 3. 유저 태그 통계 업데이트 (감소)
+        # 3. 유저 태그 통계 업데이트
         tags_to_remove = target_diary.get("tags", [])
-        
         if tags_to_remove:
-            # $inc 연산자에 음수(-1)를 넣으면 감소 효과
             inc_update = {f"user_tag_counts.{tag}": -1 for tag in tags_to_remove}
-            
             user_collection.update_one(
                 {"user_id": current_user},
                 {"$inc": inc_update}
@@ -1234,6 +1235,8 @@ async def delete_diary(diary_id: str, current_user: str = Depends(get_current_us
             "removed_tags": tags_to_remove
         }
 
+    except HTTPException as http_ex:
+        raise http_ex
     except Exception as e:
         print(f"Error in delete_diary: {e}")
         raise HTTPException(status_code=500, detail=str(e))
