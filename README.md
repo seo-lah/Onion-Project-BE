@@ -1,6 +1,3 @@
-AI 전공자로서 사용자님의 인사이트가 돋보이는 **'정제되지 않은 진실'**과 **'심리 반응 지도'** 개념을 리드미에 잘 녹여냈습니다. `images` 폴더에 있는 4개의 GIF 파일을 시각적으로 배치하여 면접관이나 인사 담당자가 한눈에 기능을 파악할 수 있도록 구성했습니다.
-
-아래 내용을 그대로 복사해서 `README.md`에 붙여넣으세요.
 
 ---
 
@@ -51,12 +48,11 @@ AI 전공자로서 사용자님의 인사이트가 돋보이는 **'정제되지 
 
 | 1. 일기 작성 및 멀티모달 기록 | 2. 일일 감정 분석 및 솔루션 |
 | :---: | :---: |
-| ![일기 작성](./images/camera.gif) | ![감정 분석](./images/write.gif) |
+| <img src="./images/camera.gif" width="350"> | <img src="./images/write.gif" width="350"> |
 | **3. AI 챗봇 심층 대화** | **4. 심리 리포트 및 감정 나무** |
-| ![AI 챗봇](./images/explore.gif) | ![리포트와 나무](./images/report.gif) |
----
+| <img src="./images/explore.gif" width="350"> | <img src="./images/report.gif" width="350"> |
 
-## 🧠 Solution & Value (AI Engineering Insight)
+## 🧠 Solution & Value 
 
 ### ✅ 익명성을 통한 데이터 무결성(Data Integrity) 확보
 
@@ -80,7 +76,7 @@ AI 전공자로서 사용자님의 인사이트가 돋보이는 **'정제되지 
 ## 🛠 기술 스택
 
 * **Frontend**: React, Vite, Tailwind CSS
-* **Backend**: Node.js, Express, MongoDB
+* **Backend**: Node.js, MongoDB, FastAPI, JWT, Bcrypt, Pydantic, Render
 * **AI API**: Google Gemini 3 API (Multimodal & NLP)
 
 ---

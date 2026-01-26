@@ -352,7 +352,25 @@ def update_big5_scores(old_scores, new_scores, alpha=0.2):
 
 # --- [Gemini] 분석 함수 ---
 async def get_gemini_analysis(diary_text: str, user_traits: List[str], retries=2):
-    cleaned_text = re.sub(r'<img[^>]*>', '', diary_text)
+    # 1. [NEW] 이미지 데이터(Base64) 추출 로직
+    # 일기 본문에서 <img src="data:image/..."> 패턴을 찾아냅니다.
+    image_parts = []
+    
+    # 정규표현식: data:image/jpeg;base64,뒷부분코드... 를 잡습니다.
+    # HTML src 속성 안의 따옴표(") 전까지를 캡처합니다.
+    img_matches = re.findall(r'data:(image\/[^;]+);base64,([^"]+)', diary_text)
+    
+    for mime_type, base64_data in img_matches:
+        # Gemini API는 딕셔너리 형태로 이미지 데이터를 받습니다.
+        image_parts.append({
+            "mime_type": mime_type,
+            "data": base64_data
+        })
+    
+    if image_parts:
+        print(f"INFO: {len(image_parts)} image(s) detected in diary for Multimodal Analysis.")
+    
+    cleaned_text = re.sub(r'<[^>]+>', '', diary_text).strip()
     
     # !!! 중요: 여기에 system_instruction 내용이 반드시 있어야 합니다 !!!
     system_instruction = """
@@ -363,7 +381,7 @@ async def get_gemini_analysis(diary_text: str, user_traits: List[str], retries=2
         You use a warm, polite, and professional tone (Korean honorifics, 존댓말).
 
         Input Data:
-        Diary Entry: The user's daily journal text.
+        Diary Entry: The user's daily journal text (and optional images).
         User Traits (Context): Existing personality keywords.
 
         Task Instructions: 
@@ -373,8 +391,9 @@ async def get_gemini_analysis(diary_text: str, user_traits: List[str], retries=2
         2. **Determine the Sentiment:** Assess if the entry is predominantly positive, neutral, or negative.
         3. **Adaptive Analysis:** - **If Positive/Resolved:** Focus on *why* the user felt good. Identify their strengths, successful coping mechanisms, and core values. Do NOT invent problems.
            - **If Negative/Unresolved:** Use CBT to identify cognitive distortions and schemas.
-        4. Generate a JSON response following the strict structure below.
-        5. Score the Big Five (OCEAN) personality traits (0-10) for this specific entry.
+        4. **Image Analysis (If provided):** If an image is present, analyze its mood, content, and connection to the text. Use visual cues to deepen the psychological insight (e.g., a messy room might indicate stress, a clear sky might indicate hope).
+        5. Generate a JSON response following the strict structure below.
+        6. Score the Big Five (OCEAN) personality traits (0-10) for this specific entry.
 
         Deep Analysis (5 Themes):
         Theme 1 (Core Flow): Identify the underlying emotional flow (e.g., Satisfaction, Anxiety, Relief).
@@ -442,11 +461,19 @@ async def get_gemini_analysis(diary_text: str, user_traits: List[str], retries=2
     traits_context = ', '.join(user_traits) if user_traits else "None"
     user_input = f"Diary Entry: {cleaned_text}\nUser Traits (Context): {traits_context}"
     
+    # 4. [NEW] 프롬프트 구성 (텍스트 + 이미지 리스트)
+    # 기본적으로 시스템 지시문과 유저 텍스트를 넣습니다.
+    prompt_parts = [system_instruction, user_input]
+    
+    # 이미지가 있다면 리스트 뒤에 추가합니다. (Gemini는 이렇게 주면 알아서 멀티모달로 인식합니다)
+    if image_parts:
+        prompt_parts.extend(image_parts)
+
     # [FIX] 단순 model.generate_content 대신 Fallback 함수 사용
     for attempt in range(retries + 1):
         try:
             # Fallback 함수 호출 (알아서 키 바꿔가며 시도함)
-            response = await call_gemini_with_fallback([system_instruction, user_input])
+            response = await call_gemini_with_fallback(prompt_parts)
             
             if response:
                 clean_json = re.sub(r"```json|```", "", response.text).strip()
