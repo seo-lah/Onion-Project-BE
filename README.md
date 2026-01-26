@@ -6,7 +6,7 @@
 > **"당신의 무의식 속에 숨겨진 심리 패턴을 데이터로 정밀 분석합니다."**
 > Gemini API를 활용하여 정제되지 않은 진실을 추출하고, 사용자의 심리적 성장을 돕는 지능형 리포팅 서비스입니다.
 
-🔗 **[서비스 바로가기](https://onion-project-fe.vercel.app/)**
+🔗 **[서비스 바로가기](https://onion-project-zeta.vercel.app/)**
 
 ---
 
