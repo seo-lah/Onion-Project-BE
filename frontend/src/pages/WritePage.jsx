@@ -1143,7 +1143,7 @@ export default function WritePage() {
                                     onClick={() => setSelectedMood(m)}
                                     className={`p-1 rounded-md transition-all ${selectedMood === m ? 'bg-amber-200 scale-110 shadow-sm' : 'hover:bg-gray-100'}`}
                                 >
-                                    <img className="h-7 w-auto" src={`/2_writepage/${m}.png`} alt={m} />
+                                    <img className="h-7 w-auto" src={`/emotion/${m}.png`} alt={m} />
                                 </button>
                             ))}
                         </div>
@@ -1159,7 +1159,7 @@ export default function WritePage() {
                                     onClick={() => setSelectedWeather(w)}
                                     className={`p-1 rounded-md transition-all ${selectedWeather === w ? 'bg-blue-200 scale-110 shadow-sm' : 'hover:bg-gray-100'}`}
                                 >
-                                    <img className="h-7 w-auto" src={`/2_writepage/${w}.png`} alt={w} />
+                                    <img className="h-7 w-auto" src={`/weather/${w}.png`} alt={w} />
                                 </button>
                             ))}
                         </div>

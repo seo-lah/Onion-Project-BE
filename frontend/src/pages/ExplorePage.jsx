@@ -137,7 +137,7 @@ const JournalEntry = ({ data, onDeleteSuccess, isChatActive, onSelect, isSelecte
                                 <div className="w-[38%] left-[15px] top-[51px] absolute border-b-2 border-black" />
                                 <div className="flex left-[17px] top-[55px] h-12 absolute justify-between w-full items-center pr-8">
                                     {['delight', 'happy', 'soso', 'angry', 'sad'].map(mood => (
-                                        <img key={mood} className={`h-10 w-auto ${data.standard.mood === mood ? 'opacity-100 scale-110' : 'opacity-30'}`} src={`/2_writepage/${mood}.png`} alt={mood} onError={(e) => e.target.style.display='none'} />
+                                        <img key={mood} className={`h-10 w-auto ${data.standard.mood === mood ? 'opacity-100 scale-110' : 'opacity-30'}`} src={`/emotion/${mood}.png`} alt={mood} onError={(e) => e.target.style.display='none'} />
                                     ))}
                                 </div>
                             </div>
@@ -147,7 +147,7 @@ const JournalEntry = ({ data, onDeleteSuccess, isChatActive, onSelect, isSelecte
                                 <div className="w-[27%] left-[15px] top-[51px] absolute border-b-2 border-black" />
                                 <div className="flex left-[17px] right-[17px] top-[65px] h-12 absolute justify-between w-auto items-center">
                                     {['sun', 'cloud', 'dark', 'rain', 'snow'].map(weather => (
-                                        <img key={weather} className={`h-10 w-auto ${data.standard.weather === weather ? 'opacity-100 scale-110' : 'opacity-30'}`} src={`/2_writepage/${weather}.png`} alt={weather} onError={(e) => e.target.style.display='none'} />
+                                        <img key={weather} className={`h-10 w-auto ${data.standard.weather === weather ? 'opacity-100 scale-110' : 'opacity-30'}`} src={`/weather/${weather}.png`} alt={weather} onError={(e) => e.target.style.display='none'} />
                                     ))}
                                 </div>
                             </div>
