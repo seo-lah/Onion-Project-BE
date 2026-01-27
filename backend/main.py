@@ -150,7 +150,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     return user_id
 
 # --- [Helper] Gemini 호출 Fallback 함수 ---
-async def call_gemini_with_fallback(prompt_parts):
+async def call_gemini_with_fallback(prompt_parts, response_type="application/json"):
     """
     여러 API 키를 순회하며 Gemini 호출을 시도합니다.
     429(Too Many Requests)나 ResourceExhausted 에러 발생 시 다음 키로 전환합니다.
@@ -173,7 +173,7 @@ async def call_gemini_with_fallback(prompt_parts):
             
             current_model = genai.GenerativeModel(
                 'gemini-3-flash-preview',
-                generation_config={"response_mime_type": "application/json"}
+                generation_config={"response_mime_type": response_type}
             )
 
             # 생성 시도 (safety_settings 추가)
@@ -188,12 +188,9 @@ async def call_gemini_with_fallback(prompt_parts):
                 return response
             
         except Exception as e:
-            last_exception = e
             error_msg = str(e)
             print(f"⚠️ WARNING: API Key {i+1} failed: {error_msg}")
             
-            # 할당량(429)이나 권한 문제면 다음 키로 넘어감
-            # (ResourceExhausted, 429, 403 등)
             if "429" in error_msg or "ResourceExhausted" in error_msg or "403" in error_msg:
                 print(f"🔄 Switching to next API Key...")
                 continue
@@ -1386,7 +1383,7 @@ async def chat_about_diary(request: DiaryChatRequest, current_user: str = Depend
         final_prompt = f"{system_instruction}\n\n[Chat History (Last 5)]\n{history_text}\nUser: {request.user_message}\nMini Onion:"
 
         # 6. Gemini 호출
-        response = await call_gemini_with_fallback([final_prompt])
+        response = await call_gemini_with_fallback([final_prompt], response_type="text/plain")
         
         if not response:
              raise HTTPException(status_code=500, detail="Gemini failed to respond.")
