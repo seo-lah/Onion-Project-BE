@@ -1320,7 +1320,7 @@ async def scan_diary_text(
             os.remove(temp_filename)
 
 
-# --- [API 13] 미니 챗봇 (일기 3개 선택 + 짧은 답변) ---
+# --- [API 13] 미니 챗봇 (일기 3개 선택 + 짧은 답변 + 멀티모달 지원) ---
 @app.post("/chat/diary")
 async def chat_about_diary(request: DiaryChatRequest, current_user: str = Depends(get_current_user)):
     try:
@@ -1330,7 +1330,6 @@ async def chat_about_diary(request: DiaryChatRequest, current_user: str = Depend
 
         # 2. 일기 데이터 일괄 조회 (MongoDB $in 연산자 사용)
         obj_ids = [ObjectId(id) for id in request.diary_ids if ObjectId.is_valid(id)]
-        
         cursor = diary_collection.find(
             {"_id": {"$in": obj_ids}, "user_id": current_user}
         )
@@ -1339,21 +1338,35 @@ async def chat_about_diary(request: DiaryChatRequest, current_user: str = Depend
         if not diaries:
             raise HTTPException(status_code=404, detail="No diaries found.")
 
-        # 3. 문맥(Context) 조립: 여러 일기를 합칩니다.
+        # 3. 문맥 조립 및 [이미지 추출]
         combined_context = ""
+        chat_image_parts = []  # 챗봇에게 보여줄 이미지 리스트
+
         for i, d in enumerate(diaries):
             date = d.get("entry_date", "Unknown")
             content = d.get("content", "")
-            # 분석 데이터 간단 요약
+            
+            # [NEW] 일기 본문에서 이미지 추출 (Base64)
+            img_matches = re.findall(r'data:(image\/[^;]+);base64,([^"]+)', content)
+            for mime_type, base64_data in img_matches:
+                chat_image_parts.append({
+                    "mime_type": mime_type,
+                    "data": base64_data
+                })
+
+            # 분석 데이터 요약
             analysis = d.get("analysis", {})
             emotion = analysis.get("theme1", "Unknown")
             
-            combined_context += f"[Diary {i+1} ({date})]\nContent: {content}\nMain Emotion: {emotion}\n---\n"
+            # 텍스트 문맥 구성 (이미지 태그 제거 후 텍스트만)
+            clean_content = re.sub(r'<[^>]+>', '', content).strip()
+            combined_context += f"[Diary {i+1} ({date})]\nContent: {clean_content}\nMain Emotion: {emotion}\n---\n"
+
+        if chat_image_parts:
+            print(f"INFO: Chatbot detected {len(chat_image_parts)} images in context.")
 
         # 4. 대화 기록 관리 (최근 5개 턴만 기억)
-        # 프론트에서 많이 보내도, 백엔드에서 뒤에서 5개만 자릅니다.
-        recent_history = request.chat_history[-5:] 
-        
+        recent_history = request.chat_history[-5:]        
         history_text = ""
         for chat in recent_history:
             role = chat.get("role", "user")
@@ -1365,7 +1378,8 @@ async def chat_about_diary(request: DiaryChatRequest, current_user: str = Depend
         Role: You are "Mini Onion," a concise and warm psychological counselor.
         
         Context: The user has selected {len(diaries)} diary entries. Answer their question based on these entries.
-        
+        **The user might ask about the photos attached to these diaries. If images are provided, use them to enrich your answer.**
+
         **CRITICAL RESPONSE RULES:**
         1. **Separator:** You MUST use the symbol **'||'** to separate distinct sentences (This creates the chat bubbles).
         2. **Length Limit:** Answer within **50 ~ 80 characters** (including spaces). This is a hard limit.
@@ -1382,8 +1396,12 @@ async def chat_about_diary(request: DiaryChatRequest, current_user: str = Depend
 
         final_prompt = f"{system_instruction}\n\n[Chat History (Last 5)]\n{history_text}\nUser: {request.user_message}\nMini Onion:"
 
-        # 6. Gemini 호출
-        response = await call_gemini_with_fallback([final_prompt], response_type="text/plain")
+        # 6. Gemini 호출 (텍스트 + 이미지 리스트 결합)
+        prompt_parts = [final_prompt]
+        if chat_image_parts:
+            prompt_parts.extend(chat_image_parts)
+            
+        response = await call_gemini_with_fallback(prompt_parts, response_type="text/plain")
         
         if not response:
              raise HTTPException(status_code=500, detail="Gemini failed to respond.")
@@ -1400,7 +1418,7 @@ async def chat_about_diary(request: DiaryChatRequest, current_user: str = Depend
 
         return {
             "status": "success",
-            "messages": messages # [변경점] reply(str) -> messages(List[str])
+            "messages": messages
         }
 
     except Exception as e:
