@@ -470,7 +470,7 @@ async def get_gemini_analysis(diary_text: str, user_traits: List[str], retries=2
     for attempt in range(retries + 1):
         try:
             # Fallback 함수 호출 (알아서 키 바꿔가며 시도함)
-            response = await call_gemini_with_fallback(prompt_parts)
+            response = await call_gemini_with_fallback(prompt_parts, response_type="application/json")
             
             if response:
                 clean_json = re.sub(r"```json|```", "", response.text).strip()
