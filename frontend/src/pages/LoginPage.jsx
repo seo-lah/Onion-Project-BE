@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { LogIn, UserPlus } from 'lucide-react';
 import { useEffect } from 'react';
 import api from '../api/axios';
+import Swal from 'sweetalert2';
 
 export default function LoginPage() {
 
@@ -64,16 +65,30 @@ export default function LoginPage() {
                 localStorage.setItem('token', data.access_token);
             }
             
-            alert("Welcome back!");
+            
+            Swal.fire({
+                title: 'Welcome back!',
+                text: 'Welcome back!',
+                icon: 'success',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#6D5B98' // ONION 앱 메인 컬러로 맞추면 더 좋겠죠?
+              });
             navigate('/');
     
         } catch (err) {
             // 4. 에러 처리 (Axios는 4xx, 5xx 에러 시 바로 catch로 옵니다)
-            console.error("로그인 실패", err);
+            console.error("Login failed", err);
             
-            const errorMessage = err.response?.data?.detail || '로그인에 실패했습니다.';
+            const errorMessage = err.response?.data?.detail || 'Login failed.';
             setError(errorMessage);
-            alert(errorMessage);
+            
+            Swal.fire({
+                title: 'Error',
+                text: errorMessage,
+                icon: 'error',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#6D5B98' // ONION 앱 메인 컬러로 맞추면 더 좋겠죠?
+              });
         } finally {
             setIsLoading(false);
         }
@@ -85,7 +100,7 @@ export default function LoginPage() {
         setError('');
     
         if (password !== confirmPassword) {
-            setError('비밀번호가 일치하지 않습니다.');
+            setError('Passwords do not match.');
             return;
         }
     
@@ -101,16 +116,24 @@ export default function LoginPage() {
     
             // 🌟 2. Axios는 성공 시(2xx) 바로 다음 줄로 넘어옵니다.
             // response.ok 체크 없이 바로 성공 로직을 작성하세요.
-            alert("회원가입이 완료되었습니다! 로그인을 진행해주세요.");
+            
+            Swal.fire({
+                title: 'Signup completed!',
+                text: 'Signup completed! Please login.',
+                icon: 'success',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#6D5B98' // ONION 앱 메인 컬러로 맞추면 더 좋겠죠?
+              });
+
             setIsLogin(true);
             resetForm();
     
         } catch (err) {
             // 🌟 3. 에러 처리 (4xx, 5xx 에러는 모두 catch에서 잡힙니다)
-            console.error("회원가입 실패", err);
+            console.error("Signup failed", err);
             
             // 서버가 보내준 구체적인 에러 메시지(data.detail)를 화면에 표시
-            const errorMessage = err.response?.data?.detail || '이미 존재하는 아이디이거나 가입에 실패했습니다.';
+            const errorMessage = err.response?.data?.detail || 'This ID is already taken, or sign-up failed.';
             setError(errorMessage);
         } finally {
             setIsLoading(false);

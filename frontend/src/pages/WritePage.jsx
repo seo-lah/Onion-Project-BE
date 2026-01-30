@@ -7,6 +7,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import 'simplebar-react/dist/simplebar.min.css';
 import { Edit2, TreePine, Search, User, HomeIcon, X, LogOut } from "lucide-react";
 import api from '../api/axios';
+import Swal from 'sweetalert2';
 import { 
     FontBoldIcon, 
     FontItalicIcon, 
@@ -130,7 +131,7 @@ export default function WritePage() {
                 videoRef.current.srcObject = stream;
             }
         } catch (err) {
-            alert("카메라를 켤 수 없습니다: " + err.message);
+            alert("Could not start camera: " + err.message);
             setIsWebcamOpen(false);
         }
     }; 
@@ -192,7 +193,7 @@ export default function WritePage() {
     
         } catch (error) {
             console.error("분석 실패:", error);
-            alert("이미지 분석에 실패했습니다.");
+            alert("Failed to analyze image.");
             setIsScanning(false);
         }
     };
@@ -241,7 +242,7 @@ export default function WritePage() {
             }
         } catch (error) {
             console.error("OCR Error:", error);
-            alert("이미지 분석에 실패했습니다.");
+            alert("Failed to analyze image.");
         } finally {
             setIsScanning(false);
         }
@@ -249,14 +250,38 @@ export default function WritePage() {
 
 
     // 🌟 로그아웃 함수 추가
-    const handleLogout = () => {
-        if (window.confirm("로그아웃 하시겠습니까?")) {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user_id');
-            alert("로그아웃 되었습니다.");
-            navigate('/login');
+    const handleLogout = async () => {
+        // 1. Swal로 세련된 로그아웃 확인창 띄우기
+        const result = await Swal.fire({
+          title: 'Log out?',
+          text: "You can always come back and write your diary! 🌳",
+          icon: 'question',
+          showCancelButton: true,
+          confirmButtonColor: '#6D5B98', // ONION 메인 컬러
+          cancelButtonColor: '#aaa',
+          confirmButtonText: 'Logout',
+          cancelButtonText: 'Cancel',
+          reverseButtons: true
+        });
+      
+        // 2. 사용자가 '로그아웃' 버튼을 눌렀을 때만 로직 실행
+        if (result.isConfirmed) {
+          // 로컬 스토리지 데이터 정리
+          localStorage.removeItem('token');
+          localStorage.removeItem('user_id');
+      
+          // 3. 성공 메시지도 Swal로 표시 (사용자가 확인을 누를 때까지 대기)
+          await Swal.fire({
+            title: 'Logged out successfully.',
+            text: 'Logged out successfully. ✨',
+            icon: 'success',
+            confirmButtonColor: '#6D5B98'
+          });
+      
+          // 4. 로그인 페이지로 이동
+          navigate('/login');
         }
-    };
+      };
 
     const getAudioSrc = (url) => {
         if (!url) return "";
@@ -374,9 +399,23 @@ export default function WritePage() {
 
     const handleDeleteTag = async (tagName) => {
         // 1. 사용자 확인
-        if (!window.confirm(`'${tagName}' 태그를 정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+        const result = await Swal.fire({
+            title: `Delete '${tagName}' tag?`,
+            text: "This action cannot be undone. ⚠️",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#6D5B98',
+            confirmButtonText: 'Delete',
+            cancelButtonText: 'Cancel',
+            reverseButtons: true
+          });
+        
+          // 🌟 핵심 수정: '삭제'를 누르지 않았다면(취소했다면) 함수 종료
+          // !result.isConfirmed 로 수정해야 합니다.
+          if (!result.isConfirmed) {
             return;
-        }
+          }
     
         try {
             // 2. API 호출
@@ -390,13 +429,20 @@ export default function WritePage() {
             setTags(prev => prev.filter(t => t !== tagName));
             setSelectedTags(prev => prev.filter(t => t !== tagName));
             
-            alert("태그가 삭제되었습니다.");
+            
+            Swal.fire({
+                title: 'Tag deleted',
+                text: 'Tag deleted successfully. ✨',
+                icon: 'success',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#6D5B98' // ONION 앱 메인 컬러로 맞추면 더 좋겠죠?
+              });
     
         } catch (err) {
             // 4. 에러 처리
-            console.error("태그 삭제 에러:", err);
+            console.error("Tag deletion error:", err);
             
-            const errorMessage = err.response?.data?.detail || "태그 삭제에 실패했습니다.";
+            const errorMessage = err.response?.data?.detail || "Failed to delete tag.";
             alert(errorMessage);
         }
     };
@@ -495,7 +541,14 @@ export default function WritePage() {
     const handleSettingsSave = async () => {
         // 🌟 1. 세션 체크 (인터셉터가 처리하지만, 버튼 클릭 시 직관적인 알림을 위해 유지)
         if (!localStorage.getItem('token')) {
-            alert("로그인 세션이 만료되었습니다. 다시 로그인해주세요.");
+            
+            Swal.fire({
+                title: 'Login session expired.',
+                text: 'Login session expired. Please login again.',
+                icon: 'warning',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#6D5B98' // ONION 앱 메인 컬러로 맞추면 더 좋겠죠?
+              });
             return;
         }
     
@@ -548,13 +601,20 @@ export default function WritePage() {
                 setMusicFile(null);
                 setBgImageBase64("");
                 setIsSettingsOpen(false);
-                alert("설정이 성공적으로 저장되었습니다! ✨");
+                
+                Swal.fire({
+                    title: 'Settings saved',
+                    text: 'Settings saved successfully. ✨',
+                    icon: 'success',
+                    confirmButtonText: 'OK',
+                    confirmButtonColor: '#6D5B98' // ONION 앱 메인 컬러로 맞추면 더 좋겠죠?
+                  });
             } else {
-                alert("일부 설정 저장에 실패했습니다. 다시 시도해 주세요.");
+                alert("Failed to save some settings. Please try again.");
             }
         } catch (err) {
-            console.error("시스템 에러:", err);
-            alert("서버와 통신 중 오류가 발생했습니다.");
+            console.error("System error:", err);
+            alert("Failed to communicate with the server.");
         }
     };
     
@@ -670,37 +730,57 @@ export default function WritePage() {
     // --- [수정] 일기 저장/업데이트 함수 ---
     // --- [수정] 일기 저장/업데이트 함수 ---
     const handleSave = async (isDraft = false) => {
-        // 에디터 내용 및 유효성 검사 (기존 로직 유지)
         const currentContent = editorRef.current ? editorRef.current.innerHTML : "";
         
         if (!isDraft) {
             const plainText = currentContent.replace(/<[^>]*>/g, "").trim();
             if (plainText.length < 10) {
-                alert("AI 분석을 위해 일기 내용을 최소 10자 이상 작성해 주세요! ✍️");
+                Swal.fire({
+                    title: 'Warning',
+                    text: 'Please write at least 10 characters for analysis.',
+                    icon: 'warning',
+                    confirmButtonText: 'OK',
+                    confirmButtonColor: '#6D5B98' // ONION 앱 메인 컬러로 맞추면 더 좋겠죠?
+                  });
+
                 return;
             }
             if (!title.trim()) {
-                alert("일기 제목을 입력해 주세요.");
+                Swal.fire({
+                    title: 'Warning',
+                    text: 'Please enter a title for your diary.',
+                    icon: 'warning',
+                    confirmButtonText: 'OK',
+                    confirmButtonColor: '#6D5B98' // ONION 앱 메인 컬러로 맞추면 더 좋겠죠?
+                  });
                 return;
             }
         }
     
         if (!localStorage.getItem('token')) {
-            alert("로그인 세션이 만료되었습니다.");
+            Swal.fire({
+                title: 'Login session expired.',
+                text: 'Login session expired. Please login again.',
+                icon: 'warning',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#6D5B98' // ONION 앱 메인 컬러로 맞추면 더 좋겠죠?
+              });
             navigate('/login');
             return;
         }
     
         setIsLoading(!isDraft);
     
-        // 날짜 및 시간 생성 (기존 로직 유지)
+        // 날짜 및 시간 설정
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
         const day = String(date.getDate()).padStart(2, '0');
         const localDateString = `${year}-${month}-${day}`;
+        
         const now = new Date();
         const savedTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
     
+        // 🌟 전송할 데이터 꾸러미
         const diaryData = {
             title: title.trim(),
             content: currentContent,
@@ -709,52 +789,56 @@ export default function WritePage() {
             weather: selectedWeather || "sun",
             tags: selectedTags,
             image_url: "",
-            is_temporary: isDraft,
+            is_temporary: isDraft, // 임시저장이면 true, 정식저장이면 false
             entry_time: savedTime,
-            diary_id: editState?.diaryId || null
+            diary_id: editState?.diaryId || null // 🌟 수정 모드일 때만 ID가 포함됨
         };
     
         try {
-            // 🌟 1. 임시저장을 정식저장으로 전환할 때 이전 데이터 삭제
-            if (!isDraft && editState?.isEdit) {
-                await api.delete(`/diaries/${editState.diaryId}`);
-                console.log("이전 임시저장 데이터 삭제 성공");
+            // 🌟 수정된 핵심 로직:
+            // 1. 단순 '임시저장 업데이트'인가? (PATCH)
+            // 2. 아니면 '정식 저장(분석 포함)'인가? (POST)
+            
+            let response;
+            const isUpdatingDraft = isDraft && editState?.isEdit;
+    
+            if (isUpdatingDraft) {
+                // [A] 임시저장 본을 그대로 다시 '임시저장' 할 때 (내용 수정만)
+                response = await api.patch(`/diaries/${editState.diaryId}`, diaryData);
+            } else {
+                // [B] 처음 쓰는 일기 저장 OR 임시저장 본을 '정식 저장'으로 전환할 때
+                // 🌟 명시적 삭제를 하지 않고, diary_id를 payload에 담아 POST로 보냅니다.
+                // 백엔드가 diary_id를 보고 기존 임시저장 데이터를 '덮어쓰기' 할 것입니다.
+                response = await api.post(`/analyze-and-save`, diaryData, {
+                    timeout: 50000 
+                });
             }
     
-            // 🌟 2. URL 및 메서드 설정
-            const isUpdatingDraft = isDraft && editState?.isEdit;
-            const url = isUpdatingDraft 
-                ? `/diaries/${editState.diaryId}` 
-                : `/analyze-and-save`;
-            
-            // 🌟 3. Axios 호출 (분석 요청 시 timeout 50초 부여)
-            await api({
-                method: isUpdatingDraft ? 'PATCH' : 'POST',
-                url: url,
-                data: diaryData,
-                timeout: isDraft ? 10000 : 50000 // 분석 시에는 50초, 단순 저장 시에는 10초
-            });
-    
-            // 🌟 4. 성공 처리 (Axios는 성공 시 바로 여기로 옴)
-            setProgress(100);
-            setTimeout(() => {
-                setIsLoading(false);
-                alert(isDraft ? "임시저장 완료!" : "일기가 성공적으로 분석되고 저장되었습니다! 🧅");
-                navigate('/explore');
-            }, 600);
+            if (response.status === 200 || response.status === 201) {
+                setProgress(100);
+                setTimeout(() => {
+                    setIsLoading(false);
+                    Swal.fire({
+                        // 제목도 상태에 따라 다르게 설정할 수 있습니다.
+                        title: isDraft ? 'Draft saved' : 'Success!',
+                        text: isDraft ? "Draft saved successfully." : "Diary analyzed and saved successfully! 🧅",
+                        icon: 'success',
+                        confirmButtonText: 'OK',
+                        confirmButtonColor: '#6D5B98' // 웹사이트의 메인 컬러에 맞춰 조절하세요.
+                      });
+                    navigate('/explore');
+                }, 600);
+            }
     
         } catch (err) {
             setIsLoading(false);
-            console.error("저장 실패:", err);
-    
-            // 🌟 5. 에러 대응
-            const errorData = err.response?.data;
-            if (errorData?.detail?.includes("AI Analysis Failed")) {
-                alert("Gemini AI가 일기를 분석하는 데 실패했습니다. 내용을 조금 더 보강해 보세요.");
-            } else if (err.code === 'ECONNABORTED') {
-                alert("분석 시간이 너무 오래 걸려 중단되었습니다. 잠시 후 다시 시도해 주세요.");
+            console.error("Save failed details:", err.response?.data || err.message);
+            
+            const errorDetail = err.response?.data?.detail;
+            if (errorDetail?.includes("AI Analysis Failed")) {
+                alert("Could not analyze. Try writing a bit more specifically!");
             } else {
-                alert(`저장 실패: ${errorData?.detail || "서버 연결 오류"}`);
+                alert("Failed to save. Please try again.");
             }
         }
     };
@@ -797,30 +881,30 @@ export default function WritePage() {
                 <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 backdrop-blur-md">
                     <div className="bg-white w-[400px] p-10 rounded-[40px] shadow-2xl text-center flex flex-col gap-6 animate-in fade-in zoom-in duration-300">
                         <div className="space-y-2">
-                            <h2 className="text-2xl font-bold text-zinc-800">어떻게 작성할까요?</h2>
-                            <p className="text-zinc-500 text-sm">기록 방식을 선택해주세요.</p>
+                            <h2 className="text-2xl font-bold text-zinc-800">How would you like to write?</h2>
+                            <p className="text-zinc-500 text-sm">Select a recording method.</p>
                         </div>
                         
                         <div className="flex flex-col gap-3">
                             {/* 1. 직접 쓰기 */}
                             <button onClick={() => setIsModalOpen(false)} className="w-full py-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-2xl font-bold transition-all flex items-center justify-center gap-2">
-                                <Edit2 size={20} /> 직접 타이핑하기
+                                <Edit2 size={20} /> Write manually
                             </button>
             
                             {/* 2. 🌟 카메라로 바로 찍기 */}
                             <button 
                                 onClick={startWebcam} 
-                                className="w-full py-4 bg-blue-500 hover:bg-blue-600 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/30"
+                                className="w-full py-4 bg-gray-800 hover:bg-gray-900 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-gray-500/30"
                             >
-                                <Search size={20} /> 실시간 사진 찍기
+                                <Search size={20} /> Take a photo
                             </button>
                             
                             {/* 3. 갤러리에서 가져오기 */}
                             <button 
                                 onClick={() => scanInputRef.current.click()} 
-                                className="w-full py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/30"
+                                className="w-full py-4 bg-gray-500 hover:bg-gray-600 text-white rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-gary-500/30"
                             >
-                                <ImageIcon width={20} height={20} /> 갤러리에서 스캔
+                                <ImageIcon width={20} height={20} /> Import from gallery
                             </button>
                         </div>
                     </div>
@@ -836,11 +920,11 @@ export default function WritePage() {
                     <div className="relative w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl border-4 border-white/20">
                         <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
                         <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-4">
-                            <button onClick={() => setIsWebcamOpen(false)} className="px-6 py-3 bg-white/20 text-white rounded-full backdrop-blur-md">취소</button>
-                            <button onClick={handleCapture} className="px-8 py-3 bg-emerald-500 text-white rounded-full font-bold shadow-lg">📸 사진 찍기</button>
+                            <button onClick={() => setIsWebcamOpen(false)} className="px-6 py-3 bg-white/20 text-white rounded-full backdrop-blur-md">Cancel</button>
+                            <button onClick={handleCapture} className="px-8 py-3 bg-emerald-500 text-white rounded-full font-bold shadow-lg">📸 Take a photo</button>
                         </div>
                     </div>
-                    <p className="text-white/60 mt-4">일기장을 카메라 중앙에 맞춰주세요.</p>
+                    <p className="text-white/60 mt-4">Center your diary in the camera frame.</p>
                     <canvas ref={canvasRef} className="hidden" />
                 </div>
             )}
@@ -849,8 +933,8 @@ export default function WritePage() {
                 <div className="fixed inset-0 z-[1400] bg-black/90 flex flex-col items-center justify-center p-6 backdrop-blur-md">
                     <div className="w-full max-w-xl bg-white rounded-[40px] overflow-hidden shadow-2xl animate-in zoom-in duration-300">
                         <div className="p-8 text-center border-b border-gray-100">
-                            <h3 className="text-2xl font-bold text-zinc-800">사진 확인</h3>
-                            <p className="text-zinc-500 text-sm mt-1">글씨가 선명하게 잘 찍혔나요?</p>
+                            <h3 className="text-2xl font-bold text-zinc-800">Photo confirmation</h3>
+                            <p className="text-zinc-500 text-sm mt-1">Is the text clear and readable?</p>
                         </div>
                         
                         {/* 찍힌 사진 표시 */}
@@ -863,13 +947,13 @@ export default function WritePage() {
                                 onClick={handleRetake}
                                 className="flex-1 py-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-2xl font-bold transition-all"
                             >
-                                다시 찍기
+                                Retake
                             </button>
                             <button 
                                 onClick={confirmAndScan}
                                 className="flex-1 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold transition-all shadow-lg shadow-emerald-500/30"
                             >
-                                이 사진으로 분석
+                                Analyze this photo
                             </button>
                         </div>
                     </div>
@@ -892,7 +976,7 @@ export default function WritePage() {
                         {/* 메시지 */}
                         <div className="text-center space-y-2">
                             <h3 className="text-white text-2xl font-bold font-['Archivo']">Reading your diary...</h3>
-                            <p className="text-zinc-400 text-sm">Gemini가 정성스러운 손글씨를 텍스트로 바꾸고 있습니다.</p>
+                            <p className="text-zinc-400 text-sm">Onion is carefully reading your handwriting...</p>
                         </div>
             
                         {/* 게이지 바 컨테이너 */}
@@ -924,7 +1008,7 @@ export default function WritePage() {
                         {/* 진행 메시지 */}
                         <div className="text-center space-y-2">
                             <h3 className="text-white text-2xl font-bold font-['Archivo']">Analyzing your soul...</h3>
-                            <p className="text-zinc-400 text-sm">소중한 당신의 기록을 AI가 깊게 읽어보고 있습니다.</p>
+                            <p className="text-zinc-400 text-sm">Onion is deeply exploring your precious records.</p>
                         </div>
 
                         {/* 게이지 바 컨테이너 */}
@@ -1135,15 +1219,15 @@ export default function WritePage() {
                     
                     {/* 1. Today Mood (이미지 버튼화) */}
                     <div className="w-full h-[90px] bg-neutral-50 rounded-tr-[35px] p-3">
-                        <div className="text-xl mb-2">Today Mood</div>
+                        <div className="text-xl mb-1">Today Mood</div>
                         <div className="flex justify-between gap-1">
                             {['delight', 'happy', 'soso', 'angry', 'sad'].map((m) => (
                                 <button 
                                     key={m}
                                     onClick={() => setSelectedMood(m)}
-                                    className={`p-1 rounded-md transition-all ${selectedMood === m ? 'bg-amber-200 scale-110 shadow-sm' : 'hover:bg-gray-100'}`}
+                                    className={`p-0.2 rounded-md transition-all ${selectedMood === m ? 'bg-gray-200 scale-110 shadow-sm' : 'hover:bg-gray-100'}`}
                                 >
-                                    <img className="h-7 w-auto" src={`/emotion/${m}.png`} alt={m} />
+                                    <img className="h-9 w-auto" src={`/emotion_new/${m}.png`} alt={m} />
                                 </button>
                             ))}
                         </div>
@@ -1157,9 +1241,9 @@ export default function WritePage() {
                                 <button 
                                     key={w}
                                     onClick={() => setSelectedWeather(w)}
-                                    className={`p-1 rounded-md transition-all ${selectedWeather === w ? 'bg-blue-200 scale-110 shadow-sm' : 'hover:bg-gray-100'}`}
+                                    className={`p-0.3 rounded-md transition-all ${selectedWeather === w ? 'bg-blue-100 scale-110 shadow-sm' : 'hover:bg-gray-100'}`}
                                 >
-                                    <img className="h-7 w-auto" src={`/weather/${w}.png`} alt={w} />
+                                    <img className="h-8 w-auto" src={`/weather/${w}.png`} alt={w} />
                                 </button>
                             ))}
                         </div>
@@ -1297,7 +1381,7 @@ export default function WritePage() {
         
                         {/* 🌟 [추가/수정] 태그 관리 섹션 */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Manage All Tags (Click X to Delete from DB)</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Manage All Tags (Click X to Delete Permanently)</label>
                             <div className="w-full max-h-32 overflow-y-auto bg-gray-50 rounded-xl p-3 border border-gray-100 flex flex-wrap gap-2 custom-scroll">
                                 {/* 🌟 filter 추가: 'unsorted'가 아닌 태그들만 추출 */}
                                 {tags.filter(tag => tag !== 'unsorted').length > 0 ? (
@@ -1319,7 +1403,7 @@ export default function WritePage() {
                                             </div>
                                         ))
                                 ) : (
-                                    <span className="text-xs text-gray-400">등록된 태그가 없습니다.</span>
+                                    <span className="text-xs text-gray-400">No tags found.</span>
                                 )}
                             </div>
                         </div>

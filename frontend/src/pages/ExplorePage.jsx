@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'; // 1. useNavigate 추가
 import {  useLocation } from 'react-router-dom';
 import { LogOut, Trash2 } from "lucide-react";
 import api from '../api/axios'
+import Swal from 'sweetalert2';
 
 
 const menuItems = [
@@ -34,17 +35,41 @@ const JournalEntry = ({ data, onDeleteSuccess, isChatActive, onSelect, isSelecte
     };
 
     // 🌟 일기 삭제 함수
+    
     const handleDeleteClick = async () => {
-        if (window.confirm("정말 이 일기를 삭제하시겠습니까?")) {
+            // 1. 삭제 확인 모달 띄우기
+            const result = await Swal.fire({
+              title: 'Are you sure you want to delete this diary?',
+              text: "Deleted diary cannot be recovered! 📋",
+              icon: 'warning',
+              showCancelButton: true,
+              confirmButtonColor: '#d33',     // 삭제 버튼: 빨간색
+              cancelButtonColor: '#6D5B98',  // 취소 버튼: 브랜드 컬러
+              confirmButtonText: 'Delete',
+              cancelButtonText: 'Cancel',
+              reverseButtons: true           // 버튼 위치를 OS 표준에 맞게 조정
+            });
+          
+            // 2. 사용자가 '삭제하기'를 클릭했을 때만 실행
+            if (result.isConfirmed) {
             try {
                 // 🌟 토큰 가져오기
                 const response = await api.delete(`/diaries/${data.id}`);
 
                 if (response.status === 200 || response.status === 204){
-                    alert("일기가 삭제되었습니다.");
+                    
+                    Swal.fire({
+                        title: 'Diary deleted.',
+                        text: 'Diary deleted successfully.',
+                        icon: 'success',
+                        confirmButtonText: 'OK',
+                        confirmButtonColor: '#6D5B98' // ONION 앱 메인 컬러로 맞추면 더 좋겠죠?
+                      });
+                    
                     onDeleteSuccess(data.id);
                 } else {
-                    alert("삭제 실패했습니다.");
+                    
+                    alert("Delete failed.");
                 }
             } catch (error) {
                 console.error("Delete Error:", error);
@@ -131,57 +156,67 @@ const JournalEntry = ({ data, onDeleteSuccess, isChatActive, onSelect, isSelecte
                 <div className="overflow-y-auto w-[380px] h-[calc(100%-25.67px)] left-[3.50px] top-[25.67px] absolute bg-white shadow-[-5px_0px_15px_rgba(0,0,0,0.02)]">
                     {activeTab === 'standard' ? (
                         <>
-                            {/* --- Standard View (기존 코드와 동일) --- */}
-                            <div className="w-full h-[110px] left-[0px] top-[0px] absolute overflow-hidden">
-                                <div className="left-[15px] top-[25px] absolute text-center justify-start text-black text-2xl font-normal font-['Archivo'] leading-5">Today Mood</div>
-                                <div className="w-[38%] left-[15px] top-[51px] absolute border-b-2 border-black" />
-                                <div className="flex left-[17px] top-[55px] h-12 absolute justify-between w-full items-center pr-8">
-                                    {['delight', 'happy', 'soso', 'angry', 'sad'].map(mood => (
-                                        <img key={mood} className={`h-10 w-auto ${data.standard.mood === mood ? 'opacity-100 scale-110' : 'opacity-30'}`} src={`/emotion/${mood}.png`} alt={mood} onError={(e) => e.target.style.display='none'} />
-                                    ))}
-                                </div>
-                            </div>
-                
-                            <div className="w-full h-[110px] left-[0px] top-[110px] absolute overflow-hidden">
-                                <div className="left-[15px] top-[25px] absolute text-center justify-start text-black text-2xl font-normal font-['Archivo'] leading-5">Weather</div>
-                                <div className="w-[27%] left-[15px] top-[51px] absolute border-b-2 border-black" />
-                                <div className="flex left-[17px] right-[17px] top-[65px] h-12 absolute justify-between w-auto items-center">
-                                    {['sun', 'cloud', 'dark', 'rain', 'snow'].map(weather => (
-                                        <img key={weather} className={`h-10 w-auto ${data.standard.weather === weather ? 'opacity-100 scale-110' : 'opacity-30'}`} src={`/weather/${weather}.png`} alt={weather} onError={(e) => e.target.style.display='none'} />
-                                    ))}
-                                </div>
-                            </div>
-                
-                            <div className="w-full h-[105px] left-[0px] top-[220px] absolute overflow-hidden">
-                                <div className="left-[15px] top-[25px] absolute text-center text-black text-2xl font-normal font-['Archivo'] leading-5">Timestamp</div>
-                                <div className="w-[34%] left-[15px] top-[51px] absolute border-b-2 border-black" />
-                                <div className="flex h-14 items-center justify-between top-[52px] absolute left-[15px] right-[15px]">
-                                    <div className="w-[200px] h-[37px] bg-zinc-300/30 rounded-[10px] flex items-center justify-center">
-                                        <span className="text-black text-2xl font-normal font-['Archivo'] leading-none">{data.standard.date}</span>
-                                    </div>
-                                    <div className="px-4 h-[37px] w-[140px] bg-zinc-300/30 rounded-[10px] flex items-center justify-center">
-                                        <span className="text-black text-2xl font-normal font-['Archivo'] leading-none">{data.standard.time}</span>
-                                    </div>
-                                </div>
-                            </div>
-                
-                            <div className="w-full h-[110px] left-[0px] top-[calc(220px+105px)] absolute overflow-hidden">
-                                <div className="left-[15px] top-[25px] absolute text-center text-black text-2xl font-normal font-['Archivo'] leading-5">Tags</div>
-                                <div className="w-[16%] left-[15px] top-[51px] absolute border-b-2 border-black" />
-                                <div className="w-[calc(100%-30px)] flex h-14 items-center left-[15px] right-[15px] top-[52px] relative">
-                                    <div className="flex-1 max-w-[100%] h-11 bg-gray-300/30 rounded-[10px] flex items-center justify-start px-3 gap-2 overflow-x-auto scrollbar-hide">
-                                        {/* 🌟 filter를 추가하여 'unsorted' 태그를 숨깁니다. */}
-                                        {data.standard.tags
-                                            .filter(tag => tag !== 'unsorted') 
-                                            .map((tag, index) => (
-                                                <div key={index} className="bg-[#BFB0EF] rounded-[5px] w-auto h-[25px] flex items-center justify-center px-2 gap-1 whitespace-nowrap">
-                                                    <span className="text-neutral-600 text-sm font-normal font-['Archivo']">{tag}</span>
-                                                </div>
-                                            ))
-                                        }
-                                    </div>
-                                </div>
-                            </div>
+                            {/* --- Standard View --- */}
+{/* Today Mood 섹션 */}
+<div className="w-full h-[111px] left-[0px] top-[0px] absolute overflow-hidden">
+    <div className="left-[15px] top-[25px] absolute text-center justify-start text-black text-2xl font-normal font-['Archivo'] leading-5">Today Mood</div>
+    
+    <div className="flex left-[17px] top-[55px] h-12 absolute justify-between w-full items-center pr-8">
+        {['delight', 'happy', 'soso', 'angry', 'sad'].map(mood => (
+            <img key={mood} className={`h-10 w-auto ${data.standard.mood === mood ? 'opacity-100 scale-110' : 'opacity-30'}`} src={`/emotion_new/${mood}.png`} alt={mood} onError={(e) => e.target.style.display='none'} />
+        ))}
+    </div>
+    {/* 📏 가로 경계선: w-[92%] 부분을 수정하여 길이 조절 가능 */}
+    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[92%] h-[1px] bg-gray-300/50" />
+</div>
+
+{/* Weather 섹션 */}
+<div className="w-full h-[118px] left-[0px] top-[110px] absolute overflow-hidden">
+    <div className="left-[15px] top-[25px] absolute text-center justify-start text-black text-2xl font-normal font-['Archivo'] leading-5">Weather</div>
+    
+    <div className="flex left-[17px] right-[17px] top-[65px] h-12 absolute justify-between w-auto items-center">
+        {['sun', 'cloud', 'dark', 'rain', 'snow'].map(weather => (
+            <img key={weather} className={`h-10 w-auto ${data.standard.weather === weather ? 'opacity-100 scale-110' : 'opacity-30'}`} src={`/weather/${weather}.png`} alt={weather} onError={(e) => e.target.style.display='none'} />
+        ))}
+    </div>
+    {/* 📏 가로 경계선 */}
+    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[92%] h-[1px] bg-gray-300/50" />
+</div>
+
+{/* Timestamp 섹션 */}
+<div className="w-full h-[114px] left-[0px] top-[220px] absolute overflow-hidden">
+    <div className="left-[15px] top-[25px] absolute text-center text-black text-2xl font-normal font-['Archivo'] leading-5">Timestamp</div>
+   
+    <div className="flex h-14 items-center justify-between top-[52px] absolute left-[15px] right-[15px]">
+        <div className="w-[200px] h-[37px] bg-zinc-300/30 rounded-[10px] flex items-center justify-center">
+            <span className="text-black text-2xl font-normal font-['Archivo'] leading-none">{data.standard.date}</span>
+        </div>
+        <div className="px-4 h-[37px] w-[140px] bg-zinc-300/30 rounded-[10px] flex items-center justify-center">
+            <span className="text-black text-2xl font-normal font-['Archivo'] leading-none">{data.standard.time}</span>
+        </div>
+    </div>
+    {/* 📏 가로 경계선 */}
+    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[92%] h-[1px] bg-gray-300/50" />
+</div>
+
+{/* Tags 섹션 */}
+<div className="w-full h-[110px] left-[0px] top-[calc(220px+105px)] absolute overflow-hidden">
+    <div className="left-[15px] top-[25px] absolute text-center text-black text-2xl font-normal font-['Archivo'] leading-5">Tags</div>
+
+    <div className="w-[calc(100%-30px)] flex h-14 items-center left-[15px] right-[15px] top-[52px] relative">
+        <div className="flex-1 max-w-[100%] h-11 bg-gray-300/30 rounded-[10px] flex items-center justify-start px-3 gap-2 overflow-x-auto scrollbar-hide">
+            {data.standard.tags
+                .filter(tag => tag !== 'unsorted') 
+                .map((tag, index) => (
+                    <div key={index} className="bg-[#BFB0EF] rounded-[5px] w-auto h-[25px] flex items-center justify-center px-2 gap-1 whitespace-nowrap">
+                        <span className="text-neutral-600 text-sm font-normal font-['Archivo']">{tag}</span>
+                    </div>
+                ))
+            }
+        </div>
+    </div>
+    
+</div>
                         </>
                     ) : (
                         /* --- Insight View (activeTab === 'insight'일 때 실행) --- */
@@ -316,7 +351,7 @@ const ChatBotWindow = ({
             <div onMouseDown={onMouseDown} className="p-5 bg-zinc-800 cursor-grab active:cursor-grabbing flex justify-between items-center text-white select-none">
                 <div className="flex items-center gap-2">
                     <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                    <span className="font-bold">Diary AI Assistant</span>
+                    <span className="font-bold">Onion Assistant</span>
                 </div>
                 <button onClick={handleChatClose} className="hover:rotate-90 transition-transform"><X size={20} /></button>
             </div>
@@ -325,8 +360,8 @@ const ChatBotWindow = ({
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-4 custom-scroll bg-transparent">
                 {chatHistory.length === 0 && (
                     <div className="text-center text-zinc-500 mt-10">
-                        <p className="font-bold">분석하고 싶은 일기를 클릭해 보세요!</p>
-                        <p className="text-sm mt-2 text-zinc-400">선택한 일기를 바탕으로 답변해 드립니다. (최대 3개)</p>
+                        <p className="font-bold">Select a diary to analyze!</p>
+                        <p className="text-sm mt-2 text-zinc-400">Answers are based on the selected diaries. (Up to 3)</p>
                     </div>
                 )}
                 {chatHistory.map((msg, i) => (
@@ -336,7 +371,7 @@ const ChatBotWindow = ({
                         </div>
                     </div>
                 ))}
-                {isTyping && <div className="text-[11px] text-zinc-400 animate-pulse ml-1">AI가 일기를 읽고 답변을 생각 중입니다...</div>}
+                {isTyping && <div className="text-[11px] text-zinc-400 animate-pulse ml-1">Onion is reading your diary and thinking...</div>}
             </div>
 
             {/* 하단 입력창 영역 */}
@@ -355,7 +390,7 @@ const ChatBotWindow = ({
                         type="text" maxLength={50} value={userMessage}
                         onChange={(e) => setUserMessage(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                        placeholder={chatCount >= 5 ? "한도 초과" : "일기에 대해 물어보세요 (50자)"}
+                        placeholder={chatCount >= 5 ? "Limit exceeded" : "Ask about your diary (50 chars)"}
                         disabled={chatCount >= 5}
                         className="w-full p-4 outline-none text-sm pr-12"
                     />
@@ -406,15 +441,40 @@ export default function ExplorePage() {
 
 
     // 🌟 로그아웃 함수 추가
-    const handleLogout = () => {
-        if (window.confirm("로그아웃 하시겠습니까?")) {
+    // 🌟 함수 앞에 'async'를 추가하여 비동기 처리를 가능하게 합니다.
+    const handleLogout = async () => {
+        // 1. Swal을 이용한 세련된 로그아웃 확인창
+        const result = await Swal.fire({
+            title: 'Log out of your account?',
+            text: "You can always come back and write your diary! 🌳",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#6D5B98', // ONION 메인 컬러
+            cancelButtonColor: '#aaa',
+            confirmButtonText: 'Log out',
+            cancelButtonText: 'Cancel',
+            reverseButtons: true            // 버튼 위치를 OS 표준에 맞게 조정
+        });
+    
+        // 2. 사용자가 'Log out'을 클릭한 경우에만 실행
+        if (result.isConfirmed) {
+            // 로컬 데이터 삭제
             localStorage.removeItem('token');
             localStorage.removeItem('user_id');
-            alert("로그아웃 되었습니다.");
+            
+            // 3. 로그아웃 완료 메시지 (사용자가 확인을 누를 때까지 기다림)
+            await Swal.fire({
+                title: 'Logged out.',
+                text: 'Logged out successfully. ✨',
+                icon: 'success',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#6D5B98'
+            });
+            
+            // 4. 로그인 페이지로 이동
             navigate('/login');
         }
     };
-
     // 1. 일기 리스트 데이터 상태
     const [journalList, setJournalList] = useState([]);
     
@@ -433,7 +493,14 @@ export default function ExplorePage() {
             const isExist = prev.find(d => d.id === id);
             if (isExist) return prev.filter(d => d.id !== id);
             if (prev.length >= 3) {
-                alert("일기는 최대 3개까지 선택 가능합니다.");
+                
+                Swal.fire({
+                    title: 'Warning',
+                    text: 'You can select up to 3 diaries.',
+                    icon: 'warning',
+                    confirmButtonText: 'Cancel',
+                    confirmButtonColor: '#6D5B98' // ONION 앱 메인 컬러로 맞추면 더 좋겠죠?
+                  });
                 return prev;
             }
             return [...prev, { id, title }];
@@ -452,7 +519,16 @@ export default function ExplorePage() {
     // 메시지 전송 함수
     const sendMessage = async () => {
         if (chatCount >= 5 || selectedDiaries.length === 0 || !userMessage.trim()) {
-            if (selectedDiaries.length === 0) alert("분석할 일기를 먼저 선택해주세요!");
+            if (selectedDiaries.length === 0) {
+                Swal.fire({
+                    title: 'Warning',
+                    text: 'Please select a diary to analyze first!',
+                    icon: 'warning',
+                    confirmButtonText: 'Cancel',
+                    confirmButtonColor: '#6D5B98' // ONION 앱 메인 컬러로 맞추면 더 좋겠죠?
+                  });
+            };
+            
             return;
         }
     
@@ -532,9 +608,40 @@ export default function ExplorePage() {
                 setChatHistory(prev => [...prev, ...newBubbles]);
             }
         } catch (error) {
-            console.error("Chat Error:", error);
-            alert("답변을 가져오는 중 오류가 발생했습니다.");
+            console.group("🚀 Chat API Error Detail");
+            console.error("Error Code:", error.code);
+            console.error("Error Message:", error.message);
+            
+            if (error.response) {
+                console.error("Status:", error.response.status);
+                console.error("Data:", error.response.data);
+            }
+            console.groupEnd();
+        
+            // 🌟 [핵심 수정] 타임아웃 또는 서버 과부하 에러 처리
+            if (error.code === 'ECONNABORTED' || error.response?.status === 429) {
+                // 타임아웃(50초 초과)이거나 서버에서 너무 많은 요청(429)을 받았을 때
+                Swal.fire({
+                    title: 'Notice',
+                    text: 'Current AI analysis traffic is very high. Please try again in a few moments. 🌳',
+                    icon: 'warning',
+                    confirmButtonColor: '#6D5B98',
+                    confirmButtonText: 'OK'
+                });
+            } else {
+                // 그 외 일반적인 네트워크 에러 등
+                const errorMsg = error.response?.data?.detail || error.message || "Unknown Error";
+                Swal.fire({
+                    title: 'Error',
+                    text: `문제가 발생했습니다: ${errorMsg}`,
+                    icon: 'error',
+                    confirmButtonColor: '#6D5B98'
+                });
+            }
+        
+            // 에러가 발생했으므로 질문 횟수 차감을 취소(복구)합니다.
             setChatCount(prev => prev - 1);
+        
         } finally {
             setIsTyping(false);
         }
@@ -588,25 +695,25 @@ export default function ExplorePage() {
                 // Insight 탭 데이터 매핑 (Backend 구조 -> Frontend 구조)
                 insight: {
                     // analysis.theme1 (핵심 흐름) -> theme
-                    theme: analysis.theme1 || "분석이 진행 중이거나 데이터가 부족합니다.",
+                    theme: analysis.theme1 || "Analysis in progress or insufficient data.",
                     
                     // analysis.theme2 (핵심 신념) -> traits
                     traits: { 
                         title:  analysis.theme2_title ||"Core Beliefs", 
-                        desc: analysis.theme2 || "분석 정보가 없습니다." ,
-                        desc2: analysis.theme3 || "분석 정보가 없습니다." ,
-                        desc3: analysis.theme4 || "분석 정보가 없습니다." 
+                        desc: analysis.theme2 || "No analysis information found." ,
+                        desc2: analysis.theme3 || "No analysis information found." ,
+                        desc3: analysis.theme4 || "No analysis information found." 
                     },
 
                     // recommend.method1 -> solution
                     solution: { 
                         title: method1.main || "Solution", 
-                        desc: method1.content || "추천 솔루션이 없습니다." ,
+                        desc: method1.content || "No recommended solutions found." ,
                         effect: method1.effect || ""
                     },
 
                     // one_liner -> comment
-                    comment: item.one_liner || "오늘 하루도 수고 많으셨어요!",
+                    comment: item.one_liner || "You did a great job today!",
                     
                     // keywords_snapshot -> keywords
                     keywords: item.keywords_snapshot || []
@@ -659,7 +766,7 @@ export default function ExplorePage() {
     
     // 🌟 4. "데이터가 없을 때"가 아니라 "로딩 중일 때"만 로딩 화면을 보여줍니다.
     if (isLoading) {
-        return <div className="min-h-screen flex items-center justify-center font-bold">데이터를 불러오는 중입니다...</div>;
+        return <div className="min-h-screen flex items-center justify-center font-bold">Loading data...</div>;
     }
 
     // 🌟 5. 로딩은 끝났는데 데이터가 0개인 경우 처리
@@ -738,12 +845,12 @@ export default function ExplorePage() {
                     </>
                 )}
                 
-                <p className="text-2xl text-neutral-600 font-bold mb-4">작성된 일기가 없습니다. ✍️</p>
+                <p className="text-2xl text-neutral-600 font-bold mb-4">No diary entries yet. ✍️</p>
                 <button 
                     onClick={() => navigate('/write')}
                     className="px-6 py-3 bg-zinc-800 text-white rounded-2xl hover:bg-black transition-all"
                 >
-                    첫 일기 쓰러 가기
+                    Go to write your first diary
                 </button>
             </div>
         );
@@ -801,7 +908,7 @@ export default function ExplorePage() {
 
             {/* [메인 컨텐츠 영역 - 스크롤 가능] */}
             {/* flex-1로 남은 공간 차지, overflow-y-auto로 세로 스크롤 생성 */}
-            <div className="flex-1 h-full overflow-y-auto overflow-x-hidden scrollbar-hide flex flex-col items-center pt-10 pb-20 relative">
+            <div className="flex-1 h-full overflow-y-auto overflow-x-hidden custom-scroll flex flex-col items-center pt-10 pb-20 relative">
                 
                 {/* [사이드 배너 버튼] */}
                 <div 

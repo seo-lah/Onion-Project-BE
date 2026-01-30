@@ -1,10 +1,11 @@
-import inputLogo from '../1_homepage/입력창로고.png';
+/* eslint-disable */
 import { Edit2, TreePine, Search, User, HomeIcon, X, LogOut } from "lucide-react"; // 아이콘 일괄 임포트
 import RadiatingButton from '../components/RadiatingButton';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import api from '../api/axios';
 import { useEffect } from 'react';
+import Swal from 'sweetalert2';
 
 // [최적화] menuItems를 컴포넌트 외부로 이동하여 리렌더링 방지
 // 아이콘 이름을 HomeIcon 등으로 변경하여 Home 컴포넌트와 충돌 피하기
@@ -46,11 +47,31 @@ export default function Home() {
     }, [isLoggedIn, token]);
 
     // 🌟 로그아웃 함수 추가
-    const handleLogout = () => {
-        if (window.confirm("로그아웃 하시겠습니까?")) {
+    const handleLogout = async () => {
+        const result = await Swal.fire({
+            title: 'Log out of your account?',
+            text: "You can always come back and write your diary! 🌳",
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#6D5B98', // ONION 메인 컬러
+            cancelButtonColor: '#aaa',
+            confirmButtonText: 'Log out',
+            cancelButtonText: 'Cancel',
+            reverseButtons: true            // 버튼 위치를 OS 표준에 맞게 조정
+        });
+        
+        if (result.isConfirmed) {
             localStorage.removeItem('token');
             localStorage.removeItem('user_id');
-            alert("로그아웃 되었습니다.");
+            Swal.fire({
+                title: 'Logged out.',
+                text: 'Logged out successfully.',
+                icon: 'success',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#6D5B98' // ONION 앱 메인 컬러로 맞추면 더 좋겠죠?
+              });
+
+            
             navigate('/login');
         }
     };
@@ -60,7 +81,14 @@ export default function Home() {
         if (isLoggedIn) {
             navigate('/write');
         } else {
-            alert("로그인이 필요한 서비스입니다.");
+            Swal.fire({
+                title: 'Login required.',
+                text: 'Login required.',
+                icon: 'warning',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#6D5B98' // ONION 앱 메인 컬러로 맞추면 더 좋겠죠?
+              });
+            
             navigate('/login');
         }
     };
@@ -146,28 +174,70 @@ export default function Home() {
             )}
 
             {/* 나머지 메인 UI 컨텐츠 */}
-            <div className="text-center text-neutral-900/75 text-5xl font-normal font-['Archivo'] leading-5 pt-[30vh]">
+            <div className="text-center text-neutral-900/75 text-5xl font-normal font-['Archivo'] leading-5 pt-[25vh]">
                 How was your day?
             </div>  
 
             {/* 🌟 수정된 입력창 영역 */}
-            <div className="flex flex-col items-center justify-center pt-[5vh]">
-                <div 
-                    onClick={handleJournalInputClick}
-                    className="cursor-pointer hover:scale-[1.02] transition-all flex flex-col w-[821px] h-20 relative bg-[linear-gradient(150deg,_rgba(238,202,94,0.37),_rgba(241,219,128,0.37),_rgba(252,227,186,0.37),_rgba(242,224,220,0.37))] rounded-full shadow-[inset_0px_0px_30px_8px_#FFFBEF,_0px_1px_30px_10px_rgba(255,255,255,0.25),_inset_10px_10px_29px_0px_rgba(251,165,99,0.10)] backdrop-blur-[10px] inline-flex justify-start items-center gap-48 overflow-hidden"
-                >
-                    <div className="left-[94px] top-[31px] absolute text-center justify-start text-neutral-900/60 text-3xl font-normal font-['Archivo'] leading-5">
-                        {/* 🌟 로그인 여부에 따른 문구 조건부 렌더링 */}
-                        {isLoggedIn ? (
-                            <span className="text-neutral-900 font-medium">
-                            {/* 🌟 userStats에서 닉네임이 오면 그걸 보여주고, 없으면 user_id 노출 */}
-                            {userStats?.nickname || localStorage.getItem('user_id')}님 안녕하세요.
-                        </span>
-                        ) : (
-                            "Start writing your journal."
-                        )}
+            {/* 🌟 임팩트 있는 스타일의 입력창 영역 */}
+            <div className="flex flex-col items-center justify-center pt-[6vh]">
+                <div className="relative group">
+                    
+                    {/* 🌈 1. 빨~보 전체가 보이는 파스텔 무지개 배경 블러/글로우 */}
+                    <div 
+                        className="absolute -inset-1.5 rounded-full blur-2xl opacity-40 group-hover:opacity-60 transition duration-500
+                                   bg-gradient-to-r from-[#FFB3BA] via-[#FFDFBA] via-[#FFFFBA] via-[#BAFFC9] via-[#BAE1FF] via-[#BDB2FF] to-[#E0C3FC]"
+                    ></div>
+            
+                    {/* 🌈 2. 빨~보 전체가 보이는 파스텔 무지개 테두리 */}
+                    <div 
+                        className="absolute inset-0 rounded-full p-[2.5px] /* 테두리 두께 */
+                                   bg-gradient-to-r from-[#FFB3BA] via-[#FFDFBA] via-[#FFFFBA] via-[#BAFFC9] via-[#BAE1FF] via-[#BDB2FF] to-[#E0C3FC]
+                                   opacity-80 group-hover:opacity-100 transition duration-300"
+                        style={{ 
+                            mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)', 
+                            maskComposite: 'exclude',
+                            WebkitMaskComposite: 'destination-out' 
+                        }}
+                    ></div>
+            
+                    {/* 3. 메인 입력창 본체 */}
+                    <div 
+                        onClick={handleJournalInputClick}
+                        className="cursor-pointer transition-all duration-300 transform hover:scale-[1.01] active:scale-[0.99]
+                                   flex items-center w-[800px] h-18 relative 
+                                   bg-white/90 backdrop-blur-2xl 
+                                   rounded-full 
+                                   shadow-[0px_10px_40px_rgba(0,0,0,0.05)] 
+                                   overflow-hidden"
+                    >
+                        {/* 왼쪽 로고 영역 */}
+                        <div className="ml-3 shrink-0 w-14 h-14 flex items-center justify-center">
+                            <img className="w-[1.5rem] h-[1.5rem] " src="/onions/main_icon6.png" alt="logo" />
+                        </div>
+            
+                        {/* 텍스트 영역 */}
+                        <div className="ml-4 text-left">
+                            {isLoggedIn ? (
+                                <div className="flex flex-col">
+                                    <span className="text-[#2D2D2D] text-2xl font-normal font-['Archivo'] leading-tight">
+                                        Hello, {userStats?.nickname || localStorage.getItem('user_id')}.
+                                    </span>
+                                </div>
+                            ) : (
+                                <span className="text-neutral-400 text-2xl font-normal font-['Archivo']">
+                                    Start writing your journal.
+                                </span>
+                            )}
+                        </div>
+            
+                        {/* 오른쪽 화살표 아이콘 */}
+                        <div className="absolute right-10 opacity-0 group-hover:opacity-100 group-hover:translate-x-2 transition-all duration-300">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2D2D2D" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M5 12h14M12 5l7 7-7 7"/>
+                            </svg>
+                        </div>
                     </div>
-                    <img className="w-16 h-16 left-[13px] top-[5.50px] absolute" src={inputLogo} alt="logo" />
                 </div>
             </div>
             
@@ -175,7 +245,7 @@ export default function Home() {
                 <RadiatingButton onClick={handleButtonClick} />
             </div>
 
-            <div className="flex justify-center items-center gap-10 absolute bottom-[50pt] w-full h-[300px] mt-10">
+            <div className="flex justify-center items-center gap-10 absolute bottom-[20vh] w-full h-[300px] mt-10">
                 {/* Write 버튼 */}
                 <div className="flex flex-col items-center group">
                     <div onClick={handleWriteClick} className="cursor-pointer hover:scale-110 transition-transform flex w-24 h-24 items-center justify-center rotate-[-28.64deg] bg-[linear-gradient(190deg,_rgba(253,216,42,0.5),_rgba(229,215,111,0.5),_rgba(217,215,145,0.5),_rgba(205,214,179,0.5))] rounded-full shadow-[inset_0px_0px_5px_5px_#FFFBEF,0px_1px_30px_10px_rgba(255,255,255,0.25)] outline outline-[3px] outline-offset-[-3px] outline-white/50 backdrop-blur-[10px]">
