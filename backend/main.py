@@ -208,7 +208,7 @@ async def extract_text_from_image_with_fallback(image_path: str):
     API 키 제한(429) 발생 시 다음 키로 전환하여 처음부터(업로드부터) 다시 시도합니다.
     """
     system_instruction = "You are a helpful assistant that transcribes handwritten notes into text. Output ONLY the transcribed text."
-    prompt = system_instruction
+    prompt = "You are a helpful assistant that transcribes handwritten notes into text. Output ONLY the transcribed text. Transcribe the handwritten text in this image. Keep the original language (Korean, English, etc.) exactly as it is. Output ONLY the text without descriptions."
 
     for i, api_key in enumerate(API_KEYS):
         uploaded_file = None
@@ -375,7 +375,12 @@ async def get_gemini_analysis(diary_text: str, user_traits: List[str], retries=2
         Your goal is to peel back the layers of the user's conscious thoughts. 
         **Crucially, you must balance identifying subconscious triggers with celebrating the user's resilience and strengths.**
         You provide analysis based on Cognitive Behavioral Therapy (CBT) AND Positive Psychology principles. 
-        You use a warm, polite, and professional tone (**Your Output MUST be in English.**).
+
+        **OUTPUT LANGUAGE RULE (CRITICAL):**
+        1. **Detect the language** of the user's 'Diary Entry'.
+        2. If the entry is in **Korean**, all string values in the JSON output MUST be in **Korean** (Use polite '존댓말/해요체').
+        3. If the entry is in **English**, all string values in the JSON output MUST be in **English**.
+        4. **IMPORTANT:** The JSON Keys (e.g., "event_summary", "analysis", "theme1") MUST always remain in **English** for code compatibility.
 
         Input Data:
         Diary Entry: The user's daily journal text (and optional images).
@@ -416,7 +421,6 @@ async def get_gemini_analysis(diary_text: str, user_traits: List[str], retries=2
         4. Use standardized **Noun forms** only.
 
         Output Format (JSON Only): Ensure the output is valid JSON. Do not include markdown formatting.
-        **All text values in JSON must be in English.**
 
         JSON Structure:
         {
@@ -452,7 +456,7 @@ async def get_gemini_analysis(diary_text: str, user_traits: List[str], retries=2
         - Event: Received public criticism from the boss at work. (Fact only)
         - Emotion: Humiliation, Fear, Resentment.
         - Analysis: User feels humiliated (Surface). Fear of unemployment links to 'Catastrophizing' and 'Low Self-Esteem' (Deep). The pattern is 'Validation Seeking' vs. 'Fear of Failure'.
-        Output Generation: (Return the JSON structure in English based on this reasoning).
+        Output Generation: (Return the JSON structure based on this reasoning).
 """
 
 
@@ -493,6 +497,12 @@ async def get_long_term_analysis_rag(context_data: str, data_count: int):
     Goal: Analyze the user's diary timeline provided in the format: Date | Mood | [EVENT] | [PSYCHOLOGY].
     Your ultimate goal is to answer the user's subconscious question: "Who am I really, and how have I changed?"
     
+    **OUTPUT LANGUAGE RULE:**
+    - Detect the dominant language of the provided diary timeline.
+    - If the content is mostly **Korean**, the JSON values MUST be in **Korean** (Polite '해요체').
+    - If the content is mostly **English**, the JSON values MUST be in **English**.
+    - **JSON Keys MUST remain in English.**
+
     **Analysis Guidelines (Deep Dive):**
     1. **Identify the 'Trigger-Reaction' Loop:** Don't just list events. Find what specifically triggers the user's emotions (e.g., Criticism, Loneliness, Failure) and identify their habitual reaction pattern.
     2. **Uncover the Narrative Arc:** How has the user's *perspective* on the world changed? 
@@ -501,7 +511,6 @@ async def get_long_term_analysis_rag(context_data: str, data_count: int):
     4. **Connect the Dots:** Explicitly link a past event to a current behavior using the [EVENT] and [PSYCHOLOGY] tags in the input.
 
     **Output JSON Structure & Content Guide:**
-    **All values must be in English.**
     {
         "major_events_timeline": [
             "String (Format: 'YYYY-MM: [Event Summary] - [Brief Impact]'. Select the top 3-5 most significant events/turning points that shaped the user's narrative.)",
@@ -519,7 +528,7 @@ async def get_long_term_analysis_rag(context_data: str, data_count: int):
         "advice_for_future": "String. (One actionable piece of advice based on their patterns. If they are doing well, tell them how to sustain it. If they are struggling, suggest a small perspective shift. Do NOT give generic advice like 'Cheer up'.)"
     }
     
-    Tone: Professional, Analytical, Deep, and Warm English.
+    Tone: Professional, Analytical, Deep, and Warm.
     """
     
     try:
@@ -1386,8 +1395,11 @@ async def chat_about_diary(request: DiaryChatRequest, current_user: str = Depend
         1. **Separator:** You MUST use the symbol **'||'** to separate distinct sentences (This creates the chat bubbles).
         2. **Length Limit:** Answer within **50 ~ 80 characters** (including spaces). This is a hard limit.
         3. **Sentence Limit:** Use only **1 or 2 sentences**.
-        4. **Tone:** Warm, supportive, conversational **English**. 
-        5. **No Fluff:** Do not use greetings like "Hello". Get straight to the answer.
+        4. **LANGUAGE MIRRORING:** You MUST reply in the **SAME LANGUAGE** as the user's input message.
+           - User asks in Korean -> Reply in Korean (Polite '해요체').
+           - User asks in English -> Reply in English.
+        5. **Tone:** Warm, supportive, empathetic.
+        6. **No Fluff:** Do not use greetings like "Hello". Get straight to the answer.
         
         Example Input: "I feel so tired lately."
         Example Output: "You've been working so hard. || Please take some time to rest and recharge today!"
