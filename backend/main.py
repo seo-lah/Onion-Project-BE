@@ -150,9 +150,12 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     return user_id
 
 # --- [Helper] Gemini 호출 Fallback 함수 ---
-async def call_gemini_with_fallback(prompt_parts, response_type="application/json"):
+async def call_gemini_with_fallback(prompt_parts, response_type="application/json", model_name="gemini-3-flash-preview"):
     """
-    여러 API 키를 순회하며 Gemini 호출을 시도합니다.
+    API 키를 순회하며 Gemini 호출.
+    Args:
+        model_name: 기본값은 'gemini-3-flash-preview'. 
+                    챗봇 등에서 'gemini-2.0-flash-lite-preview' 등을 지정해서 사용 가능.
     """
 
     # 안전 필터 해제 (가장 낮은 수준으로 설정)
@@ -165,16 +168,15 @@ async def call_gemini_with_fallback(prompt_parts, response_type="application/jso
 
     for i, api_key in enumerate(API_KEYS):
         try:
-            # 키 설정
             genai.configure(api_key=api_key)
             
+            # [수정됨] 전달받은 model_name 사용
             current_model = genai.GenerativeModel(
-                'gemini-3-flash-preview',
+                model_name,
                 generation_config={"response_mime_type": response_type}
             )
 
-            # 생성 시도 (safety_settings 추가)
-            print(f"INFO: Trying Gemini with API Key {i+1}...") # 로그 추가
+            print(f"INFO: Trying {model_name} with Key {i+1}...") 
             response = current_model.generate_content(
                 prompt_parts, 
                 safety_settings=safety_settings
@@ -196,7 +198,6 @@ async def call_gemini_with_fallback(prompt_parts, response_type="application/jso
                 print(f"🔄 Switching to next API Key...")
                 continue
             
-            # 그 외 에러(Safety 등)라도 일단 다음 키 시도 (혹시 모르니)
             continue
             
     print("❌ CRITICAL: All API keys exhausted or Content Blocked.")
@@ -1404,10 +1405,22 @@ async def chat_about_diary(request: DiaryChatRequest, current_user: str = Depend
         if chat_image_parts:
             prompt_parts.extend(chat_image_parts)
             
-        response = await call_gemini_with_fallback(prompt_parts, response_type="text/plain")
+        response = await call_gemini_with_fallback(
+            prompt_parts, 
+            response_type="text/plain", 
+            model_name="gemini-2.5-flash-lite"
+        )
         
         if not response:
-             raise HTTPException(status_code=500, detail="Gemini failed to respond.")
+             # 실패 시 폴백 메시지
+             print("ERROR: Gemini returned None. Sending fallback message.")
+             return {
+                "status": "success",
+                "messages": [
+                    "Sorry, I'm a bit overwhelmed right now.",
+                    "Please ask me again in a moment!"
+                ]
+            }
 
         raw_text = response.text.strip()
         
