@@ -1454,7 +1454,7 @@ async def chat_about_diary(request: DiaryChatRequest, current_user: str = Depend
 def run_self_ping():
     # TODO: 아래 주소를 본인의 실제 Render 배포 URL로 변경하세요!
     # 예: https://onion-project.onrender.com/health
-    target_url = "https://onion-project-fqyt.onrender.com" 
+    target_url = "https://onion-project-fqyt.onrender.com/health" 
     
     print(f"INFO: Self-ping task started for {target_url}")
     while True:
