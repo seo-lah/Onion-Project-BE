@@ -1415,8 +1415,9 @@ async def chat_about_diary(request: DiaryChatRequest, current_user: str = Depend
         response = await call_gemini_with_fallback(
             prompt_parts, 
             response_type="text/plain", 
-            model_name="gemini-2.5-flash-lite"
+            model_name="gemini-3-flash-preview"
         )
+        #model_name="gemini-2.5-flash-lite"
         
         if not response:
              # 실패 시 폴백 메시지
