@@ -8,6 +8,8 @@
 
 🔗 **[Go to Service](https://onion-project-zeta.vercel.app/)**
 
+🔗 **[Go to Frontend](https://github.com/millstar324/Onion-Project-FE)**
+
 ---
 
 ## 🚀 Project Overview
